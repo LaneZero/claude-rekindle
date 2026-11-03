@@ -28,7 +28,20 @@
     if (d.getTime() < now-600000) d.setDate(d.getDate()+1);
     return d.getTime();
   }
-  const api = Object.freeze({PAUSED, EARLY, TIMED, NEAR_LIMIT, classify, advisory, resetTimestamp});
+  // Only match actions inside a status banner; never click Upgrade, Dismiss, or composer buttons.
+  function findActionBanner(root) {
+    const banners = root.querySelectorAll('[data-testid="message-warning"][role="status"]');
+    for (const banner of banners) {
+      const text = banner.textContent || '';
+      const reason = classify(text);
+      if (!reason) continue;
+      const button = [...banner.querySelectorAll('button')].find(el =>
+        /^(continue|resume)$/i.test((el.textContent || '').trim()));
+      if (button) return { banner, button, content: text, reason, timed: TIMED.test(text) };
+    }
+    return null;
+  }
+  const api = Object.freeze({PAUSED, EARLY, TIMED, NEAR_LIMIT, classify, advisory, resetTimestamp, findActionBanner});
   global.AutoResumeCore = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

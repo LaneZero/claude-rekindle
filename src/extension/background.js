@@ -3,6 +3,31 @@
 const KEY = 'lanezero.autoresume.resetSchedules';
 const ALARM_PREFIX = 'claude-reset:';
 const NOTIF_PREFIX = 'claude-reset-notification:';
+const CLAIM_KEY = 'lanezero.rekindle.resumeClaims.v1';
+let claimQueue = Promise.resolve();
+// Serialize read/modify/write operations across tabs, including simultaneous warnings.
+function claimResume(sender, reason) {
+  const operation = claimQueue.then(async () => {
+    if (!validUrl(sender.tab?.url || '') || !['usage_limit', 'ended_early'].includes(reason))
+      return {granted:false};
+    const id = idFor(sender.tab.url);
+    const now = Date.now();
+    const stored = (await chrome.storage.local.get(CLAIM_KEY))[CLAIM_KEY] || {};
+    const recent = Object.fromEntries(Object.entries(stored).filter(([, item]) =>
+      item && Number.isFinite(item.at) && now - item.at < 3600000 && now >= item.at));
+    const key = id + ':' + reason;
+    const prior = recent[key];
+    const cooldown = reason === 'ended_early' ? 15000 : 600000;
+    // A persistent per-conversation budget prevents automatic endless retry loops.
+    if (prior && (now - prior.at < cooldown ||
+        (reason === 'ended_early' && prior.count >= 3))) return {granted:false};
+    recent[key] = {at:now, count: prior ? prior.count+1 : 1};
+    await chrome.storage.local.set({[CLAIM_KEY]:recent});
+    return {granted:true};
+  });
+  claimQueue = operation.catch(() => {});
+  return operation;
+}
 const getSchedules = async () => (await chrome.storage.local.get(KEY))[KEY] || {};
 const saveSchedules = async schedules => chrome.storage.local.set({ [KEY]: schedules });
 const alarmName = id => ALARM_PREFIX + id;
@@ -39,6 +64,10 @@ async function restoreAlarms() {
   await remindDue();
 }
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request?.type === 'claimResume') {
+    claimResume(sender, request.reason).then(sendResponse).catch(() => sendResponse({granted:false}));
+    return true;
+  }
   if (!['scheduleReset','resolveReset'].includes(request?.type)) return;
   (async () => {
     if (!sender.tab?.url || !validUrl(sender.tab.url) || !validUrl(request.url) ||
