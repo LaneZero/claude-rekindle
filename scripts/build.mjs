@@ -16,4 +16,4 @@ for(const browser of ['chrome','firefox']) {
 }
 await mkdir(join(out,'tampermonkey'),{recursive:true});
 await copyFile(join(root,'src','userscript.user.js'),join(out,'tampermonkey','claude-rekindle.user.js'));
-console.log('Built Chrome, Firefox and legacy Tampermonkey distributions.');
+console.log('Built Chrome, Firefox and Tampermonkey distributions.');

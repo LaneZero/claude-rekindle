@@ -10,7 +10,7 @@
   const RESET_KEY = PREFIX + 'resets';
   const REMINDER_KEY = PREFIX + 'reminder';
   const SETTINGS_KEY = PREFIX + 'settings';
-  const { PAUSED, EARLY, TIMED, NEAR_LIMIT } = AutoResumeCore;
+  const { NEAR_LIMIT } = AutoResumeCore;
   const MAX_HISTORY = 100;
   const IS_BROWSER_ADDON = true;
   const IS_EXTENSION = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
@@ -94,14 +94,16 @@
 
   // Scope selection to Claude's warning. Never click a generic page button.
   function findBanner() {
-    for (const banner of document.querySelectorAll('[data-testid="message-warning"][role="status"]')) {
-      const content = banner.textContent || '';
-      if (!PAUSED.test(content) && !TIMED.test(content) && !EARLY.test(content)) continue;
-      const button = [...banner.querySelectorAll('button')].find(el =>
-        /^(continue|resume)$/i.test((el.textContent || '').trim()));
-      if (button) return { banner, button, content, timed: TIMED.test(content), reason: EARLY.test(content) ? 'ended_early' : 'usage_limit' };
-    }
-    return null;
+    return AutoResumeCore.findActionBanner(document);
+  }
+  // Background serializes claims across all tabs in the same browser profile.
+  // No fallback click on an extension messaging failure: fail closed.
+  async function claimContinue(reason) {
+    if (!IS_EXTENSION) return true;
+    try {
+      const answer = await chrome.runtime.sendMessage({type:'claimResume', reason});
+      return answer?.granted === true;
+    } catch { return false; }
   }
   function findNearLimit() {
     // Composer warning has no message-warning test id; never use its Upgrade button.
@@ -208,7 +210,13 @@
       : `${event.reason === 'ended_early' ? 'Early response' : 'Usage pause'} · Continue clicked at ${formatTime(event.time)}; result unconfirmed`);
   }
 
-  function check() {
+  let checking = false;
+  async function check() {
+    if (checking) return;
+    checking = true;
+    try { await checkInner(); } finally { checking = false; }
+  }
+  async function checkInner() {
     if (location.pathname !== path) loadConversation();
     if (!settings.enabled) { display('ClaudeRekindle disabled'); return; }
     const now = Date.now();
@@ -268,8 +276,18 @@
       display(`${found.reason === 'ended_early' ? 'Early response' : 'Usage pause'} · cooldown active`);
       return;
     }
+    // Recheck the DOM after the asynchronous claim. A user may have resumed manually.
+    if (!await claimContinue(found.reason)) {
+      display('Continue blocked by another tab or extension background unavailable');
+      return;
+    }
+    if (!found.button.isConnected || !enabledButton(found.button) ||
+        AutoResumeCore.findActionBanner(document)?.button !== found.button) {
+      display('Continue button changed before click; waiting for next check');
+      return;
+    }
     // Write before triggering the UI action to prevent duplicate attempts.
-    state.lastClick = now;
+    state.lastClick = Date.now();
     state.pending = { at: now, reason: found.reason };
     saveConversation();
     try {

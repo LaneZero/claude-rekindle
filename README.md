@@ -2,7 +2,7 @@
 
 Unofficial browser utility that resumes **eligible, paused Claude.ai responses** by clicking the existing enabled Continue button. It never bypasses quotas, sends prompts automatically, or calls private Claude APIs. Independent of Anthropic.
 
-> **Status:** v2.4.0-beta.1 engineering baseline. Automated parser tests and packaging validation only; not production/stable or verified on Firefox Android.
+> **Status:** v2.5.0-beta.1 engineering baseline. Automated parser tests and packaging validation only; not production/stable or verified on Firefox Android.
 
 ## Supported targets
 
@@ -59,7 +59,7 @@ Extension permissions: `storage` for reminders, `alarms` for wake-up while the b
 
 Do not call the beta version stable until manual and automated browser QA passes. See `docs/ROADMAP.md` and `docs/GIT_GUIDE_FA.md`.
 
-## Rebranding and migration (v2.4.0-beta.1)
+## Rebranding and migration (v2.5.0-beta.1)
 
 The product is now **ClaudeRekindle by LaneZero**. Proposed repository: `LaneZero/claude-rekindle`.
 
@@ -68,3 +68,7 @@ The product is now **ClaudeRekindle by LaneZero**. Proposed repository: `LaneZer
 - Chrome should likewise have only one of the old/new extensions enabled.
 - Rebranding does not imply official affiliation with Anthropic; do not use Anthropic's official marks or suggest endorsement.
 - No GitHub repository has been created or pushed by this archive.
+
+## Reliability Beta v2.5
+
+See [v2.5 release notes](docs/V2.5_RELEASE_NOTES.md) for cross-tab arbitration, test coverage, safety boundaries, and installation limitations.
