@@ -1,6 +1,6 @@
 {
   "name": "claude-rekindle",
-  "version": "2.6.0-beta.1",
+  "version": "2.6.1-beta.1",
   "private": true,
   "description": "Browser-focused ClaudeRekindle monorepo",
   "scripts": {

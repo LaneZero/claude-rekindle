@@ -13,6 +13,10 @@ const query = async (type,payload={}) => {
 };
 const fmt = ms => Number.isFinite(Number(ms)) ? new Date(Number(ms)).toLocaleString() : 'Unknown time';
 const setState = (label,kind='') => { $('state').textContent=label; $('state').className=`pill ${kind}`; };
+const isClaude = url => /^https:\/\/claude\.ai(?:\/|$)/.test(url || '');
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+function report(message) { $('action-feedback').textContent = message; }
+
 function drawHistory(events) {
   const target=$('history');target.replaceChildren();
   if (!events?.length) {target.textContent='No activity has been recorded yet.';return;}
@@ -27,7 +31,7 @@ async function refresh() {
   try {
     const tabs=await chrome.tabs.query({active:true,currentWindow:true});
     const tab=tabs[0];
-    if(!tab||!/^https:\/\/claude\.ai(?:\/|$)/.test(tab.url||'')) throw new Error('Open a Claude conversation to monitor its status.');
+    if(!tab||!isClaude(tab.url)) throw new Error('Open a Claude conversation to monitor its status.');
     tabId=tab.id;
     const [data,hist]=await Promise.all([query('getState'),query('getHistory')]);
     setState(data.enabled?'Active':'Disabled',data.enabled?'on':'off');
@@ -46,7 +50,48 @@ for(const tab of document.querySelectorAll('.tab')) tab.addEventListener('click'
   for(const page of document.querySelectorAll('.page')) page.classList.toggle('active',page.id===`page-${tab.dataset.tab}`);
 });
 $('enabled').addEventListener('change',async()=>{try{await query('setEnabled',{enabled:$('enabled').checked});await refresh();}catch(e){$('status').textContent=e.message;}});
-$('show').addEventListener('click',async()=>{try{await query('showPanel');}catch(e){$('status').textContent=e.message;}});
+// Show must work even when the current browser tab is not Claude.
+// The toolbar popup covers the web page until it closes, so close it only after
+// Claude confirms the panel is visible. No chat data or cookies are accessed.
+async function showPagePanel() {
+  const show = $('show');
+  show.disabled = true;
+  report('Finding an open Claude tab…');
+  try {
+    let candidate = null;
+    const active = (await chrome.tabs.query({active:true,currentWindow:true}))[0];
+    if (active && isClaude(active.url)) candidate = active;
+    if (!candidate) {
+      const matches = await chrome.tabs.query({url:'https://claude.ai/*'});
+      candidate = matches.find(tab => /^https:\/\/claude\.ai\/chat\//.test(tab.url||'')) || matches[0];
+    }
+    if (!candidate) {
+      report('No Claude tab found. Opening Claude…');
+      candidate = await chrome.tabs.create({url:'https://claude.ai/new',active:true});
+    } else {
+      await chrome.tabs.update(candidate.id,{active:true});
+      if (candidate.windowId != null) await chrome.windows.update(candidate.windowId,{focused:true});
+    }
+    // Content scripts may still be loading after navigation or tab activation.
+    let lastError = null;
+    for (let i=0;i<12;i++) {
+      try {
+        const result = await chrome.tabs.sendMessage(candidate.id,{type:'showPanel'});
+        if (result?.ok && result.visible) {
+          report('Page panel opened.');
+          window.close();
+          return;
+        }
+        lastError = new Error('ClaudeRekindle did not confirm that its panel is visible.');
+      } catch (error) { lastError = error; }
+      await sleep(350);
+    }
+    throw lastError || new Error('Unable to show page panel. Reload the Claude tab, then retry.');
+  } catch (error) {
+    report(`Show failed: ${error?.message || String(error)}. Reload Claude and try again.`);
+  } finally { show.disabled = false; }
+}
+$('show').addEventListener('click',showPagePanel);
 async function exportHistory(){try{
   const data=await query('getHistory');
   const file=new Blob([JSON.stringify(data.events||[],null,2)],{type:'application/json'});

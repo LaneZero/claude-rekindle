@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ClaudeRekindle by LaneZero
 // @namespace    https://github.com/LaneZero
-// @version      2.6.0-beta.1
+// @version      2.6.1-beta.1
 // @author       LaneZero
 // @description  Resumes Claude only when an eligible Continue is active. Tracks variable-percentage 5-hour quota warnings and reset times without clicking Upgrade; stores reminders and local history. Independent of Anthropic; never bypasses limits.
 // @match        https://claude.ai/*
@@ -189,7 +189,8 @@
   panel.append(header, message, last, actions);
 
   function render() {
-    panel.style.display = panelVisible ? 'block' : 'none';
+    // Force visibility over page-wide CSS rules; preserve manual dismissal.
+    panel.style.setProperty('display', panelVisible ? 'block' : 'none', 'important');
     if (!panelVisible) return;
     message.textContent = settings.enabled ? statusText : 'ClaudeRekindle disabled';
     toggle.textContent = settings.enabled ? 'Disable' : 'Enable';
@@ -216,7 +217,8 @@
   if (typeof GM_registerMenuCommand === 'function') {
     GM_registerMenuCommand('Show ClaudeRekindle panel', openPanel);
   }
-  document.body.append(panel);
+  // Mount on the root to avoid body-level clipping and stacking contexts.
+  document.documentElement.append(panel);
   loadConversation();
   panelVisible = !settings.dismissed;
 
@@ -325,7 +327,7 @@
         sendResponse({ ok: true, enabled: settings.enabled });
       } else if (request?.type === 'showPanel') {
         openPanel();
-        sendResponse({ ok: true });
+        sendResponse({ ok: true, visible: panelVisible && panel.isConnected && getComputedStyle(panel).display !== 'none' });
       } else if (request?.type === 'getHistory') {
         sendResponse({ events: history() });
       }
