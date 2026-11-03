@@ -31,8 +31,15 @@ async function refresh() {
   try {
     const tabs=await chrome.tabs.query({active:true,currentWindow:true});
     const tab=tabs[0];
-    if(!tab||!isClaude(tab.url)) throw new Error('Open a Claude conversation to monitor its status.');
-    tabId=tab.id;
+    // On Android and in ordinary browsing, the selected tab may not be Claude.
+    // Read an existing Claude tab without silently navigating the user away.
+    let target = tab && isClaude(tab.url) ? tab : null;
+    if (!target) {
+      const matches = await chrome.tabs.query({url:'https://claude.ai/*'});
+      target = matches.find(item => /^https:\/\/claude\.ai\/chat\//.test(item.url || '')) || matches[0] || null;
+    }
+    if (!target) throw new Error('No Claude tab open. Use Open Claude or Show page panel.');
+    tabId=target.id;
     const [data,hist]=await Promise.all([query('getState'),query('getHistory')]);
     setState(data.enabled?'Active':'Disabled',data.enabled?'on':'off');
     $('enabled').checked=!!data.enabled;$('enabled').disabled=false;
@@ -70,7 +77,11 @@ async function showPagePanel() {
       candidate = await chrome.tabs.create({url:'https://claude.ai/new',active:true});
     } else {
       await chrome.tabs.update(candidate.id,{active:true});
-      if (candidate.windowId != null) await chrome.windows.update(candidate.windowId,{focused:true});
+      // Some Android browsers do not implement window focus. This must not block Show.
+      if (candidate.windowId != null && chrome.windows?.update) {
+        try { await chrome.windows.update(candidate.windowId,{focused:true}); }
+        catch { /* The tab is already activated. Continue without window focus. */ }
+      }
     }
     // Content scripts may still be loading after navigation or tab activation.
     let lastError = null;
@@ -92,6 +103,15 @@ async function showPagePanel() {
   } finally { show.disabled = false; }
 }
 $('show').addEventListener('click',showPagePanel);
+$('open-claude').addEventListener('click', async () => {
+  try { await chrome.tabs.create({url:'https://claude.ai/new',active:true}); window.close(); }
+  catch (error) { report(`Could not open Claude: ${error.message || String(error)}`); }
+});
+$('refresh-status').addEventListener('click', async () => {
+  report('Checking Claude tabs…');
+  await refresh();
+  report('Status refreshed.');
+});
 async function exportHistory(){try{
   const data=await query('getHistory');
   const file=new Blob([JSON.stringify(data.events||[],null,2)],{type:'application/json'});

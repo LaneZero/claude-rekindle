@@ -1,8 +1,10 @@
+> Current beta: v2.7.1. Firefox popup width regression fixed.
+
 # ClaudeRekindle by LaneZero
 
 Unofficial browser utility that resumes **eligible, paused Claude.ai responses** by clicking the existing enabled Continue button. It never bypasses quotas, sends prompts automatically, or calls private Claude APIs. Independent of Anthropic.
 
-> **Status:** v2.5.1-beta.1 reliability hardening. Automated parser tests and packaging validation only; not production/stable or verified on Firefox Android.
+> **Status:** v2.7.0-beta.1 mobile popup hardening. Automated parser tests and packaging validation only; not production/stable or verified on Firefox Android.
 
 ## Supported targets
 
@@ -93,3 +95,11 @@ See [v2.5 release notes](docs/V2.5_RELEASE_NOTES.md) for cross-tab arbitration, 
 - Tampermonkey gets its own embedded 32 px icon at build time. Popup redesign applies to Firefox and Chrome; Tampermonkey retains its in-page panel.
 
 **Safety:** The extension does not bypass Claude usage limits. A removed banner is not proof a response completed.
+
+## v2.7 beta — Mobile popup hardening
+
+- Touch-friendly controls and narrow-screen layout.
+- Show page panel tolerates unsupported Firefox Android window-focus APIs.
+- Popup can read an already-open Claude chat even when another tab is selected.
+- Open Claude and Refresh status buttons work without an active Claude chat.
+- Android background execution is experimental, not guaranteed. See `docs/V2.7_RELEASE_NOTES.md` for the manual QA checklist.

@@ -17,7 +17,7 @@ test('icon assets have correct PNG dimensions', () => {
 test('extension manifests reference available icons', () => {
   for (const browser of ['chrome', 'firefox']) {
     const manifest = JSON.parse(fs.readFileSync(`config/manifest.${browser}.json`, 'utf8'));
-    assert.equal(manifest.version, '2.6.1');
+    assert.equal(manifest.version, require('../package.json').version.split('-')[0]);
     for (const relative of Object.values(manifest.icons)) {
       assert.ok(fs.existsSync(`assets/${path.basename(relative)}`));
     }
