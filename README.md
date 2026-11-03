@@ -2,7 +2,7 @@
 
 Unofficial browser utility that resumes **eligible, paused Claude.ai responses** by clicking the existing enabled Continue button. It never bypasses quotas, sends prompts automatically, or calls private Claude APIs. Independent of Anthropic.
 
-> **Status:** v2.5.0-beta.1 engineering baseline. Automated parser tests and packaging validation only; not production/stable or verified on Firefox Android.
+> **Status:** v2.5.1-beta.1 reliability hardening. Automated parser tests and packaging validation only; not production/stable or verified on Firefox Android.
 
 ## Supported targets
 
@@ -50,7 +50,7 @@ Extension permissions: `storage` for reminders, `alarms` for wake-up while the b
 
 ### Known engineering debt
 
-1. **Cross-tab coordination:** currently click cooldown is per tab; multiple tabs on the same conversation may race. Required before stable release.
+1. **Cross-tab coordination:** background-mediated claims serialize clicks across tabs; verify actual browser behavior before stable release.
 2. **LocalStorage scope:** content-script data sits in site-local storage, while reset schedule uses extension storage. Plan migration to extension storage.
 3. **Tampermonkey engine:** still uses its separate legacy detection code; unify after cross-browser regression tests.
 4. **DOM integration tests:** Node parser tests cannot prove button clicks or verify Claude UI behavior.
@@ -72,3 +72,24 @@ The product is now **ClaudeRekindle by LaneZero**. Proposed repository: `LaneZer
 ## Reliability Beta v2.5
 
 See [v2.5 release notes](docs/V2.5_RELEASE_NOTES.md) for cross-tab arbitration, test coverage, safety boundaries, and installation limitations.
+
+## Reliability hardening v2.5.1
+
+- Claims are serialized in the extension background with an opaque token. If the DOM action disappears before clicking, the holder releases that claim, avoiding a false cooldown.
+- A competing tab cannot release someone else's claim; wrong tokens and other conversation URLs are rejected.
+- A **banner_cleared** result means the warning DOM vanished after clicking. It does **not** prove answer generation completed or quota was replenished.
+- The userscript is unchanged in this release, still on its independent engine.
+- Browser integration and Firefox Android remain unverified.
+
+
+## v2.6.0 Beta 1: Interface and branding
+
+- Official visual identity derived from the user-supplied artwork. Source preserved in `assets/icon-original.png`.
+- Generated icon sizes: 16, 32, 48, 64, 96, 128 and 256 px.
+- Firefox and Chrome Popup tabs: Overview, Activity, About, Support.
+- GitHub: https://github.com/LaneZero/claude-rekindle
+- Support tab has Bitcoin, TRON/TRC20 USDT, EVM and Solana wallet addresses with network labels and copy actions. Confirm addresses and network before donating.
+- No telemetry, remote analytics or third-party dependencies introduced.
+- Tampermonkey gets its own embedded 32 px icon at build time. Popup redesign applies to Firefox and Chrome; Tampermonkey retains its in-page panel.
+
+**Safety:** The extension does not bypass Claude usage limits. A removed banner is not proof a response completed.

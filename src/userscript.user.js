@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ClaudeRekindle by LaneZero
 // @namespace    https://github.com/LaneZero
-// @version      2.4.0-beta.1
+// @version      2.6.0-beta.1
 // @author       LaneZero
 // @description  Resumes Claude only when an eligible Continue is active. Tracks variable-percentage 5-hour quota warnings and reset times without clicking Upgrade; stores reminders and local history. Independent of Anthropic; never bypasses limits.
 // @match        https://claude.ai/*

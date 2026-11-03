@@ -14,5 +14,5 @@ test('both extensions expose the new brand', () => {
 test('Tampermonkey metadata uses ClaudeRekindle', () => {
   const text = fs.readFileSync('src/userscript.user.js', 'utf8');
   assert.match(text, /@name\s+ClaudeRekindle by LaneZero/);
-  assert.match(text, /@version\s+2\.4\.0-beta\.1/);
+  assert.match(text, /@version\s+2\.6\.0-beta\.1/);
 });

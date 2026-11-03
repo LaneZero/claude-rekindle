@@ -99,11 +99,16 @@
   // Background serializes claims across all tabs in the same browser profile.
   // No fallback click on an extension messaging failure: fail closed.
   async function claimContinue(reason) {
-    if (!IS_EXTENSION) return true;
+    if (!IS_EXTENSION) return {granted:true, token:null};
     try {
       const answer = await chrome.runtime.sendMessage({type:'claimResume', reason});
-      return answer?.granted === true;
-    } catch { return false; }
+      return answer?.granted === true ? answer : {granted:false};
+    } catch { return {granted:false}; }
+  }
+  async function releaseContinue(reason, token) {
+    if (!IS_EXTENSION || !token) return;
+    try { await chrome.runtime.sendMessage({type:'releaseResume', reason, token}); }
+    catch { /* Cooldown expires if the background becomes unavailable. */ }
   }
   function findNearLimit() {
     // Composer warning has no message-warning test id; never use its Upgrade button.
@@ -202,10 +207,10 @@
     state.pending = null;
     saveConversation();
     addRecord(event);
-    if (result === 'confirmed') resolveReset();
+    if (result === 'banner_cleared') resolveReset();
     // Each new event may show the panel, even when the previous one was dismissed.
     openPanel();
-    display(result === 'confirmed'
+    display(result === 'banner_cleared'
       ? `${event.reason === 'ended_early' ? 'Early response' : 'Usage pause'} · Continue clicked at ${formatTime(event.time)} · banner cleared`
       : `${event.reason === 'ended_early' ? 'Early response' : 'Usage pause'} · Continue clicked at ${formatTime(event.time)}; result unconfirmed`);
   }
@@ -236,8 +241,8 @@
     // Banner disappearance is an observable signal, not absolute proof that
     // a generation completed. Wording deliberately says "resumed" only.
     if (state.pending) {
-      if (!found && now - state.pending.at > 3000) {
-        completeAttempt('confirmed');
+      if (!found && now - state.pending.at > 3000 && location.pathname === path) {
+        completeAttempt('banner_cleared');
         return;
       }
       if (now - state.pending.at > VERIFY_MS) {
@@ -277,12 +282,14 @@
       return;
     }
     // Recheck the DOM after the asynchronous claim. A user may have resumed manually.
-    if (!await claimContinue(found.reason)) {
+    const claim = await claimContinue(found.reason);
+    if (!claim.granted) {
       display('Continue blocked by another tab or extension background unavailable');
       return;
     }
     if (!found.button.isConnected || !enabledButton(found.button) ||
         AutoResumeCore.findActionBanner(document)?.button !== found.button) {
+      await releaseContinue(found.reason, claim.token);
       display('Continue button changed before click; waiting for next check');
       return;
     }
@@ -294,6 +301,7 @@
       found.button.click();
       display(`${found.reason === 'ended_early' ? 'Early response' : 'Usage pause'} · Continue clicked · checking`);
     } catch {
+      await releaseContinue(found.reason, claim.token);
       completeAttempt('unconfirmed');
     }
   }
