@@ -1,0 +1,13 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>ClaudeRekindle fixture tests</title>
+<body>
+<!-- Sanitized DOM samples based on observed Claude warning banners; no user content. -->
+<section id="early"><div data-cds="Banner" data-testid="message-warning" role="status">
+  <div>This response ended early.</div><span data-step="3"><div data-trigger-disabled=""><button type="button" data-cds="Button"><span>Continue</span></button></div></span>
+</div></section>
+<section id="paused"><div data-cds="Banner" data-testid="message-warning" role="status">
+ <div>Paused when your free usage ran out. Continue to pick up where Claude stopped.</div><button type="button" data-cds="Button"><span>Continue</span></button>
+</div></section>
+<section id="advisory"><div data-cds="Banner"><span aria-atomic="true">Over 90% of your 5-hour limit used · Resets at 5:00 PM</span><a href="/upgrade">Upgrade</a><button aria-label="Dismiss">×</button></div></section>
+<section id="timed"><div data-cds="Banner" data-testid="message-warning" role="status"><div>Paused: Your free usage returns at 4:30 AM. Continue then.</div><button disabled>Continue</button></div></section>
+<section id="unrelated"><div data-cds="Banner" data-testid="message-warning" role="status"><div>Something else happened</div><button>Continue</button></div></section>
+</body></html>
