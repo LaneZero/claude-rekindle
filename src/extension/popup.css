@@ -21,3 +21,16 @@ body{width:370px;min-width:370px;max-width:none;overflow-x:hidden}
  .actions{grid-template-columns:1fr}
 }
 @media(max-height:520px){main{max-height:60vh}}
+
+/* Local-time quota countdown: hidden until a valid saved schedule is available. */
+.reset-card{margin-top:12px;border:1px solid #594038;border-radius:12px;padding:13px;background:#2c2222;display:grid;gap:5px}
+.reset-card[hidden]{display:none!important}.reset-card strong{font-size:20px;color:#fff}.reset-card span{color:#ffb49f;font-weight:650}.reset-card small{color:#b8afb7}
+
+/* v2.7.3: robust five-tab navigation and safe settings controls. */
+.tabs{grid-template-columns:repeat(5,minmax(0,1fr))}
+.tab{font-size:10px;letter-spacing:-.1px;padding:10px 0}
+.field{width:100%;min-height:44px;border-radius:9px;background:#332a32;color:#fff;border:1px solid #594852;padding:9px;margin:7px 0 12px;font:inherit}
+.setting-label{display:block;font-weight:650;margin-top:16px}
+.check-setting{align-items:flex-start;border:1px solid #44363c;border-radius:12px;padding:12px}
+.check-setting input{width:20px;height:20px;accent-color:#db634a;flex-shrink:0;margin-top:4px}
+#settings-feedback{min-height:16px}

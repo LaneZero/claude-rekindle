@@ -103,3 +103,15 @@ See [v2.5 release notes](docs/V2.5_RELEASE_NOTES.md) for cross-tab arbitration, 
 - Popup can read an already-open Claude chat even when another tab is selected.
 - Open Claude and Refresh status buttons work without an active Claude chat.
 - Android background execution is experimental, not guaranteed. See `docs/V2.7_RELEASE_NOTES.md` for the manual QA checklist.
+
+### v2.7.2 local reset countdown
+Reads hard quota banners such as `You are out of free messages until 10:00 PM`, shows the announced reset clock in the device local timezone and time remaining. Past the announced time it reports that availability is unconfirmed. No quota bypass, automatic prompt sending, or private API use. See `docs/V2.7.2_LOCAL_RESET.md`.
+
+## v2.7.3 Beta 1: Monitoring interval and guarded refresh
+
+- The **Settings** tab provides fallback DOM check intervals: **1, 2, 5 (default), 10, 15 minutes**. An observed DOM change still triggers an immediate, debounced check, so `This response ended early.` does not wait for the timer.
+- **Safe page reload is opt-in and OFF by default.** When enabled, a reload can happen only if a hard quota warning remains after its announced local reset time, no Continue action exists, no pending attempt exists and no unsent input is detected. Maximum three attempts per tab session and never faster than the chosen interval.
+- An interval check is *local DOM inspection*, not polling private Claude endpoints. A page reload does make an ordinary browser navigation request.
+- On Tampermonkey, set intervals and safe reload via the Tampermonkey menu. On Firefox/Chrome, use Settings in the toolbar Popup.
+- No refresh is run while the browser is closed or the device is asleep; timers may be throttled in background tabs. Firefox Android requires actual device verification.
+- **Known limit:** This is intentionally conservative but cannot guarantee preservation of every transient in-page state, especially unsaved uploads. Leave safe reload off for critical or lengthy jobs.

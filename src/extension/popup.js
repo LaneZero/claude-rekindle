@@ -7,6 +7,24 @@ const wallets = Object.freeze({
   sol:'91kuBFEZAnRk8ixsuzAQnAVvtzLAsQpPFRsfe285ZKUC'
 });
 let tabId = null;
+let resetAt = null;
+function updateCountdown() {
+  const box = $('reset-card');
+  if (!Number.isFinite(resetAt) || resetAt <= 0) { box.hidden = true; return; }
+  box.hidden = false;
+  $('reset-clock').textContent = new Intl.DateTimeFormat(undefined, {
+    hour:'2-digit',minute:'2-digit',timeZoneName:'short'
+  }).format(new Date(resetAt));
+  const diff = resetAt - Date.now();
+  if (diff <= 0) {
+    $('reset-countdown').textContent = 'Announced time passed · awaiting confirmation';
+  } else {
+    const minutes = Math.ceil(diff / 60000);
+    const hours = Math.floor(minutes / 60);
+    $('reset-countdown').textContent = hours ? `${hours}h ${minutes % 60}m remaining` : `${minutes}m remaining`;
+  }
+}
+setInterval(updateCountdown, 1000);
 const query = async (type,payload={}) => {
   if (tabId === null) throw new Error('Open a Claude conversation first.');
   return chrome.tabs.sendMessage(tabId,{type,...payload});
@@ -43,18 +61,31 @@ async function refresh() {
     const [data,hist]=await Promise.all([query('getState'),query('getHistory')]);
     setState(data.enabled?'Active':'Disabled',data.enabled?'on':'off');
     $('enabled').checked=!!data.enabled;$('enabled').disabled=false;
+    $('check-minutes').value = String(data.checkMinutes ?? 5);
+    $('safe-reload').checked = data.safeReload === true;
     $('status').textContent=data.status||'Monitoring';
+    resetAt = Number.isFinite(data.resetAt) ? data.resetAt : null;
+    updateCountdown();
     $('last').textContent=data.latest?`${fmt(data.latest.time)} · ${data.latest.result}`:'No attempts yet';
     $('count').textContent=String(data.historyCount||0);
     drawHistory(hist.events);
   } catch(e) {
-    tabId=null;setState('No tab');$('status').textContent=e.message||'Could not connect to the active Claude tab.';
+    tabId=null;resetAt=null;updateCountdown();setState('No tab');$('status').textContent=e.message||'Could not connect to the active Claude tab.';
     $('enabled').disabled=true;$('last').textContent='Open Claude to view';drawHistory([]);
   }
 }
 for(const tab of document.querySelectorAll('.tab')) tab.addEventListener('click',()=>{
   for(const item of document.querySelectorAll('.tab')) {const selected=item===tab;item.classList.toggle('active',selected);item.setAttribute('aria-selected',String(selected));}
   for(const page of document.querySelectorAll('.page')) page.classList.toggle('active',page.id===`page-${tab.dataset.tab}`);
+});
+$('save-settings').addEventListener('click', async () => {
+  const minutes = Number($('check-minutes').value);
+  const safeReload = $('safe-reload').checked;
+  try {
+    const result = await query('setSettings', { checkMinutes: minutes, safeReload });
+    if (!result?.ok) throw new Error(result?.error || 'Save failed');
+    $('settings-feedback').textContent = `Saved: ${minutes}-minute checks; safe reload ${safeReload ? 'on' : 'off'}.`;
+  } catch (error) { $('settings-feedback').textContent = error.message; }
 });
 $('enabled').addEventListener('change',async()=>{try{await query('setEnabled',{enabled:$('enabled').checked});await refresh();}catch(e){$('status').textContent=e.message;}});
 // Show must work even when the current browser tab is not Claude.

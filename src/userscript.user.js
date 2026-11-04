@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ClaudeRekindle by LaneZero
 // @namespace    https://github.com/LaneZero
-// @version      2.6.1-beta.1
+// @version      2.7.3-beta.1
 // @author       LaneZero
 // @description  Resumes Claude only when an eligible Continue is active. Tracks variable-percentage 5-hour quota warnings and reset times without clicking Upgrade; stores reminders and local history. Independent of Anthropic; never bypasses limits.
 // @match        https://claude.ai/*
@@ -12,7 +12,10 @@
 (() => {
   'use strict';
 
-  const CHECK_MS = 5000;
+  const VALID_INTERVALS = Object.freeze([1, 2, 5, 10, 15]);
+  const DEFAULT_INTERVAL = 5;
+  const MAX_SAFE_RELOADS = 3;
+  const RELOAD_KEY = 'lanezero:rekindle:safe-reloads:' + location.pathname;
   const COOLDOWN_MS = 10 * 60_000;
   const EARLY_COOLDOWN_MS = 15_000;
   const VERIFY_MS = 20_000;
@@ -24,7 +27,8 @@
   const PAUSED = /Paused when your free usage ran out\./i;
   const EARLY = /This response ended early\./i;
   const TIMED = /Paused:\s*Your free usage returns at\s*\d{1,2}:\d{2}\s*(?:AM|PM)/i;
-  const TIME = /Your free usage returns at\s*(\d{1,2}):(\d{2})\s*(AM|PM)/i;
+  const TIME = /(?:Your free usage returns at|You are out of free (?:messages|usage) until)\s*(\d{1,2}):(\d{2})\s*(AM|PM)/i;
+  const HARD_LIMIT = /You are out of free (?:messages|usage) until\s*\d{1,2}:\d{2}\s*(?:AM|PM)/i;
   // Advisory banner percentage varies; do not hard-code 90%.
   const NEAR_LIMIT = /(?:Over\s*)?(\d{1,3})%\s+of\s+your\s+(?:\d+[- ]hour|\w+)[- ]limit\s+used\s*[·•|–-]\s*Resets\s+at\s+(\d{1,2}):(\d{2})\s*(AM|PM)/i;
   const MAX_HISTORY = 100;
@@ -39,8 +43,11 @@
   const writeJSON = (store, key, value) => {
     try { store.setItem(key, JSON.stringify(value)); } catch { /* Storage may be disabled. */ }
   };
-  let settings = readJSON(localStorage, SETTINGS_KEY, { enabled: true, dismissed: false });
+  let settings = readJSON(localStorage, SETTINGS_KEY, { enabled: true, dismissed: false, checkMinutes: DEFAULT_INTERVAL, safeReload: false });
   if (typeof settings !== 'object' || !settings) settings = { enabled: true, dismissed: false };
+  if (!VALID_INTERVALS.includes(Number(settings.checkMinutes))) settings.checkMinutes = DEFAULT_INTERVAL;
+  settings.safeReload = settings.safeReload === true;
+  let nextPeriodicCheck = 0;
   let path = location.pathname;
   let state = {};
   let panelVisible = false;
@@ -98,6 +105,39 @@
   }
   function saveConversation() { writeJSON(sessionStorage, stateKey(), state); }
   function saveSettings() { writeJSON(localStorage, SETTINGS_KEY, settings); }
+  function hasUnsentDraft() {
+    return [...document.querySelectorAll('[contenteditable="true"], textarea, input:not([type="hidden"])')]
+      .some(el => (el.matches('[contenteditable="true"]') ? el.textContent : el.value || '').trim().length > 0);
+  }
+  function maybeSafeReload({hardLimit, found, now}) {
+    if (!settings.safeReload || !hardLimit || found || state.pending || hasUnsentDraft()) return;
+    const schedule = currentSchedule();
+    if (!schedule || schedule.reason !== 'usage_limit' || schedule.at > now) return;
+    const record = readJSON(sessionStorage, RELOAD_KEY, { count: 0, last: 0 });
+    if (record.count >= MAX_SAFE_RELOADS || now - record.last < settings.checkMinutes * 60_000) return;
+    writeJSON(sessionStorage, RELOAD_KEY, { count: record.count + 1, last: now });
+    location.reload();
+  }
+  if (typeof GM_registerMenuCommand === 'function') {
+    GM_registerMenuCommand('Check interval: 1 minute', () => setCheckMinutes(1));
+    GM_registerMenuCommand('Check interval: 2 minutes', () => setCheckMinutes(2));
+    GM_registerMenuCommand('Check interval: 5 minutes', () => setCheckMinutes(5));
+    GM_registerMenuCommand('Check interval: 10 minutes', () => setCheckMinutes(10));
+    GM_registerMenuCommand('Check interval: 15 minutes', () => setCheckMinutes(15));
+    GM_registerMenuCommand('Toggle safe page reload (off by default)', () => {
+      settings.safeReload = !settings.safeReload;
+      saveSettings();
+      display(`Safe reload: ${settings.safeReload ? 'ON' : 'OFF'}`);
+      openPanel();
+    });
+  }
+  function setCheckMinutes(value) {
+    settings.checkMinutes = value;
+    nextPeriodicCheck = Date.now() + value * 60_000;
+    saveSettings();
+    display(`Check interval: ${value} minute(s)`);
+    openPanel();
+  }
   function history() { return readJSON(localStorage, HISTORY_KEY, []); }
   function addRecord(record) {
     const entries = history();
@@ -132,8 +172,28 @@
     }
     return null;
   }
+  function findHardLimit() {
+    for (const banner of document.querySelectorAll('[data-cds="Banner"]')) {
+      const text = banner.textContent || '';
+      if (HARD_LIMIT.test(text)) return text;
+    }
+    return null;
+  }
+  function currentSchedule() {
+    const item = reminders[location.pathname];
+    return item && !item.resolved && Number.isFinite(item.at) ? item : null;
+  }
+  function scheduleStatus(item) {
+    const local = new Intl.DateTimeFormat(undefined, {
+      hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
+    }).format(new Date(item.at));
+    const minutes = Math.ceil((item.at - Date.now()) / 60000);
+    const remaining = minutes <= 0 ? 'scheduled time passed; availability not confirmed' :
+      minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m remaining` : `${minutes}m remaining`;
+    return `${item.reason === 'usage_limit' ? 'Usage limit' : 'Usage advisory'} · local reset ${local} · ${remaining}`;
+  }
   function parseReset(text) {
-    const m = /(?:Your free usage returns at|Resets at)\s*(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(text);
+    const m = /(?:Your free usage returns at|Resets at|You are out of free (?:messages|usage) until)\s*(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(text);
     if (!m) return null;
     const hour = Number(m[1]);
     const minute = Number(m[2]);
@@ -247,6 +307,11 @@
     const now = Date.now();
     const found = findBanner();
     const advisory = findNearLimit();
+    const hardLimit = findHardLimit();
+    if (hardLimit) {
+      const hardAt = parseReset(hardLimit);
+      if (hardAt) rememberReset(hardAt, 'usage_limit');
+    }
     if (advisory) {
       // Parse only the reset clock, never interpret the usage percentage as a threshold.
       const nearAt = parseReset(advisory.text);
@@ -257,6 +322,7 @@
       }
     }
     remindInPageIfDue();
+    maybeSafeReload({hardLimit, found, now});
 
     // Banner disappearance is an observable signal, not absolute proof that
     // a generation completed. Wording deliberately says "resumed" only.
@@ -274,7 +340,9 @@
     }
     if (!found) {
       if (advisory && state.lastNearLimit?.at) {
-        display(`Usage advisory: ${advisory.percent}% used · reset scheduled ${formatTime(state.lastNearLimit.at)} · no pause detected`);
+        display(currentSchedule()?.reason === 'usage_limit' ? scheduleStatus(currentSchedule()) + ' · no Continue button detected' : `Usage advisory: ${advisory.percent}% used · ${scheduleStatus(currentSchedule() || {at:state.lastNearLimit.at,reason:'near_limit'})} · no pause detected`);
+      } else if (currentSchedule()) {
+        display(scheduleStatus(currentSchedule()) + ' · no Continue button detected');
       } else {
         display('Monitoring · paused banner not present');
       }
@@ -288,7 +356,7 @@
         if (state.resetAt) rememberReset(state.resetAt, 'usage_limit');
       }
       if (state.resetAt && now < state.resetAt) {
-        display(`Waiting for reset · ~${Math.ceil((state.resetAt - now) / 60000)} min`);
+        display(scheduleStatus({at: state.resetAt, reason:'usage_limit'}));
         return;
       }
     }
@@ -334,7 +402,19 @@
       return false;
     });
   }
-  setInterval(check, CHECK_MS);
+  nextPeriodicCheck = Date.now() + settings.checkMinutes * 60_000;
+  setInterval(() => {
+    if (Date.now() >= nextPeriodicCheck) {
+      nextPeriodicCheck = Date.now() + settings.checkMinutes * 60_000;
+      check();
+    }
+  }, 1000);
+  let mutationTimer;
+  new MutationObserver(() => {
+    clearTimeout(mutationTimer);
+    mutationTimer = setTimeout(check, 650);
+  }).observe(document.body || document.documentElement,
+    { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['disabled','aria-disabled'] });
   document.addEventListener('visibilitychange', check);
   window.addEventListener('focus', check);
   // Persisted timestamps survive restarts; check after reopening the page.
