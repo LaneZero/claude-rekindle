@@ -1,13 +1,70 @@
 // ==UserScript==
 // @name         ClaudeRekindle by LaneZero
-// @namespace    https://github.com/LaneZero
-// @version      2.7.3-beta.1
+// @namespace    https://github.com/LaneZero/claude-rekindle
+// @version      2.7.4-beta.1
 // @author       LaneZero
-// @description  Resumes Claude only when an eligible Continue is active. Tracks variable-percentage 5-hour quota warnings and reset times without clicking Upgrade; stores reminders and local history. Independent of Anthropic; never bypasses limits.
+// @description  Resume eligible paused responses in Claude.ai; track announced quota reset times. Independent of Anthropic. Does not bypass limits.
 // @match        https://claude.ai/*
 // @run-at       document-idle
 // @grant        GM_registerMenuCommand
 // ==/UserScript==
+
+// Pure DOM-independent recognition rules shared by the browser builds and tests.
+(function (global) {
+  'use strict';
+  const PAUSED = /Paused when your free usage ran out\./i;
+  const EARLY = /This response ended early\./i;
+  const TIMED = /Paused:\s*Your free usage returns at\s*\d{1,2}:\d{2}\s*(?:AM|PM)/i;
+  const HARD_LIMIT = /You are out of free (?:messages|usage) until\s*(\d{1,2}):(\d{2})\s*(AM|PM)/i;
+  const NEAR_LIMIT = /(?:Over\s*)?(\d{1,3})%\s+of\s+your\s+(?:\d+[- ]hour|\w+)[- ]limit\s+used\s*[·•|–-]\s*Resets\s+at\s+(\d{1,2}):(\d{2})\s*(AM|PM)/i;
+  function classify(text) {
+    if (EARLY.test(text)) return 'ended_early';
+    if (PAUSED.test(text) || TIMED.test(text)) return 'usage_limit';
+    return null;
+  }
+  function advisory(text) {
+    const m = NEAR_LIMIT.exec(text);
+    if (!m || +m[1] > 100 || +m[2] < 1 || +m[2] > 12 || +m[3] > 59) return null;
+    return {percent:+m[1], resetText:`${m[2]}:${m[3]} ${m[4].toUpperCase()}`};
+  }
+  function resetTimestamp(text, now = Date.now(), previousAt = null) {
+    const m = /(?:Your free usage returns at|Resets at|You are out of free (?:messages|usage) until)\s*(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(text);
+    if (!m || +m[1] < 1 || +m[1] > 12 || +m[2] > 59) return null;
+    const hour = (+m[1] % 12) + (m[3].toUpperCase() === 'PM' ? 12 : 0);
+    if (Number.isFinite(previousAt) && now - previousAt >= 0 && now - previousAt < 86400000) {
+      const d = new Date(previousAt);
+      if (d.getHours() === hour && d.getMinutes() === +m[2]) return previousAt;
+    }
+    const d = new Date(now);
+    d.setHours(hour,+m[2],0,0);
+    if (d.getTime() < now-600000) d.setDate(d.getDate()+1);
+    return d.getTime();
+  }
+  function remainingText(at, now = Date.now()) {
+    if (!Number.isFinite(at) || at <= 0) return 'Unknown';
+    const delta = at - now;
+    if (delta <= 0) return 'Scheduled reset time passed; availability not confirmed';
+    const mins = Math.ceil(delta / 60000);
+    const hours = Math.floor(mins / 60);
+    return hours ? `${hours}h ${mins % 60}m remaining` : `${mins}m remaining`;
+  }
+  // Only match actions inside a status banner; never click Upgrade, Dismiss, or composer buttons.
+  function findActionBanner(root) {
+    const banners = root.querySelectorAll('[data-testid="message-warning"][role="status"]');
+    for (const banner of banners) {
+      const text = banner.textContent || '';
+      const reason = classify(text);
+      if (!reason) continue;
+      const button = [...banner.querySelectorAll('button')].find(el =>
+        /^(continue|resume)$/i.test((el.textContent || '').trim()));
+      if (button) return { banner, button, content: text, reason, timed: TIMED.test(text) };
+    }
+    return null;
+  }
+  const api = Object.freeze({PAUSED, EARLY, TIMED, HARD_LIMIT, NEAR_LIMIT, classify, advisory, resetTimestamp, remainingText, findActionBanner});
+  global.AutoResumeCore = api;
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
 
 (() => {
   'use strict';
@@ -24,16 +81,10 @@
   const RESET_KEY = PREFIX + 'resets';
   const REMINDER_KEY = PREFIX + 'reminder';
   const SETTINGS_KEY = PREFIX + 'settings';
-  const PAUSED = /Paused when your free usage ran out\./i;
-  const EARLY = /This response ended early\./i;
-  const TIMED = /Paused:\s*Your free usage returns at\s*\d{1,2}:\d{2}\s*(?:AM|PM)/i;
-  const TIME = /(?:Your free usage returns at|You are out of free (?:messages|usage) until)\s*(\d{1,2}):(\d{2})\s*(AM|PM)/i;
-  const HARD_LIMIT = /You are out of free (?:messages|usage) until\s*\d{1,2}:\d{2}\s*(?:AM|PM)/i;
-  // Advisory banner percentage varies; do not hard-code 90%.
-  const NEAR_LIMIT = /(?:Over\s*)?(\d{1,3})%\s+of\s+your\s+(?:\d+[- ]hour|\w+)[- ]limit\s+used\s*[·•|–-]\s*Resets\s+at\s+(\d{1,2}):(\d{2})\s*(AM|PM)/i;
+  const { NEAR_LIMIT, HARD_LIMIT, remainingText } = AutoResumeCore;
   const MAX_HISTORY = 100;
   const IS_BROWSER_ADDON = false;
-  const IS_EXTENSION = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
+  const IS_EXTENSION = false;
   let lastStatus = 'Monitoring Claude';
 
   const readJSON = (store, key, fallback) => {
@@ -48,6 +99,7 @@
   if (!VALID_INTERVALS.includes(Number(settings.checkMinutes))) settings.checkMinutes = DEFAULT_INTERVAL;
   settings.safeReload = settings.safeReload === true;
   let nextPeriodicCheck = 0;
+  let lastObservedUrl = location.href;
   let path = location.pathname;
   let state = {};
   let panelVisible = false;
@@ -105,11 +157,16 @@
   }
   function saveConversation() { writeJSON(sessionStorage, stateKey(), state); }
   function saveSettings() { writeJSON(localStorage, SETTINGS_KEY, settings); }
+  // A DOM change triggers prompt checks; the configurable timer is a fallback.
   function hasUnsentDraft() {
     return [...document.querySelectorAll('[contenteditable="true"], textarea, input:not([type="hidden"])')]
-      .some(el => (el.matches('[contenteditable="true"]') ? el.textContent : el.value || '').trim().length > 0);
+      .some(el => {
+        if (el.closest('#lanezero-rekindle-panel') || el.closest('nav')) return false;
+        return (el.matches('[contenteditable="true"]') ? el.textContent : el.value || '').trim().length > 0;
+      });
   }
   function maybeSafeReload({hardLimit, found, now}) {
+    // Never reload on a normal page, a live Continue, or unfinished user input.
     if (!settings.safeReload || !hardLimit || found || state.pending || hasUnsentDraft()) return;
     const schedule = currentSchedule();
     if (!schedule || schedule.reason !== 'usage_limit' || schedule.at > now) return;
@@ -117,26 +174,6 @@
     if (record.count >= MAX_SAFE_RELOADS || now - record.last < settings.checkMinutes * 60_000) return;
     writeJSON(sessionStorage, RELOAD_KEY, { count: record.count + 1, last: now });
     location.reload();
-  }
-  if (typeof GM_registerMenuCommand === 'function') {
-    GM_registerMenuCommand('Check interval: 1 minute', () => setCheckMinutes(1));
-    GM_registerMenuCommand('Check interval: 2 minutes', () => setCheckMinutes(2));
-    GM_registerMenuCommand('Check interval: 5 minutes', () => setCheckMinutes(5));
-    GM_registerMenuCommand('Check interval: 10 minutes', () => setCheckMinutes(10));
-    GM_registerMenuCommand('Check interval: 15 minutes', () => setCheckMinutes(15));
-    GM_registerMenuCommand('Toggle safe page reload (off by default)', () => {
-      settings.safeReload = !settings.safeReload;
-      saveSettings();
-      display(`Safe reload: ${settings.safeReload ? 'ON' : 'OFF'}`);
-      openPanel();
-    });
-  }
-  function setCheckMinutes(value) {
-    settings.checkMinutes = value;
-    nextPeriodicCheck = Date.now() + value * 60_000;
-    saveSettings();
-    display(`Check interval: ${value} minute(s)`);
-    openPanel();
   }
   function history() { return readJSON(localStorage, HISTORY_KEY, []); }
   function addRecord(record) {
@@ -150,14 +187,21 @@
 
   // Scope selection to Claude's warning. Never click a generic page button.
   function findBanner() {
-    for (const banner of document.querySelectorAll('[data-testid="message-warning"][role="status"]')) {
-      const content = banner.textContent || '';
-      if (!PAUSED.test(content) && !TIMED.test(content) && !EARLY.test(content)) continue;
-      const button = [...banner.querySelectorAll('button')].find(el =>
-        /^(continue|resume)$/i.test((el.textContent || '').trim()));
-      if (button) return { banner, button, content, timed: TIMED.test(content), reason: EARLY.test(content) ? 'ended_early' : 'usage_limit' };
-    }
-    return null;
+    return AutoResumeCore.findActionBanner(document);
+  }
+  // Background serializes claims across all tabs in the same browser profile.
+  // No fallback click on an extension messaging failure: fail closed.
+  async function claimContinue(reason) {
+    if (!IS_EXTENSION) return {granted:true, token:null};
+    try {
+      const answer = await chrome.runtime.sendMessage({type:'claimResume', reason});
+      return answer?.granted === true ? answer : {granted:false};
+    } catch { return {granted:false}; }
+  }
+  async function releaseContinue(reason, token) {
+    if (!IS_EXTENSION || !token) return;
+    try { await chrome.runtime.sendMessage({type:'releaseResume', reason, token}); }
+    catch { /* Cooldown expires if the background becomes unavailable. */ }
   }
   function findNearLimit() {
     // Composer warning has no message-warning test id; never use its Upgrade button.
@@ -173,6 +217,7 @@
     return null;
   }
   function findHardLimit() {
+    // A composer quota banner has no Continue button. Match only this explicit message.
     for (const banner of document.querySelectorAll('[data-cds="Banner"]')) {
       const text = banner.textContent || '';
       if (HARD_LIMIT.test(text)) return text;
@@ -187,28 +232,11 @@
     const local = new Intl.DateTimeFormat(undefined, {
       hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
     }).format(new Date(item.at));
-    const minutes = Math.ceil((item.at - Date.now()) / 60000);
-    const remaining = minutes <= 0 ? 'scheduled time passed; availability not confirmed' :
-      minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m remaining` : `${minutes}m remaining`;
-    return `${item.reason === 'usage_limit' ? 'Usage limit' : 'Usage advisory'} · local reset ${local} · ${remaining}`;
+    const label = item.reason === 'usage_limit' ? 'Usage limit' : 'Usage advisory';
+    return `${label} · local reset ${local} · ${remainingText(item.at)}`;
   }
   function parseReset(text) {
-    const m = /(?:Your free usage returns at|Resets at|You are out of free (?:messages|usage) until)\s*(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(text);
-    if (!m) return null;
-    const hour = Number(m[1]);
-    const minute = Number(m[2]);
-    if (hour < 1 || hour > 12 || minute > 59) return null;
-    const previous = reminders[location.pathname];
-    // Reuse a recent saved reset across browser restarts instead of rolling it to tomorrow.
-    if (previous && Number.isFinite(previous.at) && Date.now() - previous.at < 24*60*60_000) {
-      const saved = new Date(previous.at);
-      const expectedHour = hour % 12 + (m[3].toUpperCase() === 'PM' ? 12 : 0);
-      if (saved.getHours() === expectedHour && saved.getMinutes() === minute) return previous.at;
-    }
-    const date = new Date();
-    date.setHours(hour % 12 + (m[3].toUpperCase() === 'PM' ? 12 : 0), minute, 0, 0);
-    if (date.getTime() < Date.now() - 10 * 60_000) date.setDate(date.getDate() + 1);
-    return date.getTime();
+    return AutoResumeCore.resetTimestamp(text, Date.now(), reminders[location.pathname]?.at ?? null);
   }
   function enabledButton(button) {
     if (!button.isConnected || button.disabled || button.matches(':disabled') ||
@@ -274,6 +302,24 @@
     saveSettings();
     check();
   });
+  // Tampermonkey settings reuse the same monitoring engine as the extensions.
+  if (!IS_BROWSER_ADDON && typeof GM_registerMenuCommand === 'function') {
+    for (const minutes of VALID_INTERVALS) {
+      GM_registerMenuCommand(`Check interval: ${minutes} minute(s)`, () => {
+        settings.checkMinutes = minutes;
+        nextPeriodicCheck = Date.now() + minutes * 60_000;
+        saveSettings();
+        openPanel();
+        display(`Check interval set to ${minutes} minute(s)`);
+      });
+    }
+    GM_registerMenuCommand('Toggle safe page reload (off by default)', () => {
+      settings.safeReload = !settings.safeReload;
+      saveSettings();
+      openPanel();
+      display(`Safe reload ${settings.safeReload ? 'enabled' : 'disabled'}`);
+    });
+  }
   if (typeof GM_registerMenuCommand === 'function') {
     GM_registerMenuCommand('Show ClaudeRekindle panel', openPanel);
   }
@@ -293,15 +339,21 @@
     state.pending = null;
     saveConversation();
     addRecord(event);
-    if (result === 'confirmed') resolveReset();
+    if (result === 'banner_cleared') resolveReset();
     // Each new event may show the panel, even when the previous one was dismissed.
     openPanel();
-    display(result === 'confirmed'
+    display(result === 'banner_cleared'
       ? `${event.reason === 'ended_early' ? 'Early response' : 'Usage pause'} · Continue clicked at ${formatTime(event.time)} · banner cleared`
       : `${event.reason === 'ended_early' ? 'Early response' : 'Usage pause'} · Continue clicked at ${formatTime(event.time)}; result unconfirmed`);
   }
 
-  function check() {
+  let checking = false;
+  async function check() {
+    if (checking) return;
+    checking = true;
+    try { await checkInner(); } finally { checking = false; }
+  }
+  async function checkInner() {
     if (location.pathname !== path) loadConversation();
     if (!settings.enabled) { display('ClaudeRekindle disabled'); return; }
     const now = Date.now();
@@ -327,8 +379,8 @@
     // Banner disappearance is an observable signal, not absolute proof that
     // a generation completed. Wording deliberately says "resumed" only.
     if (state.pending) {
-      if (!found && now - state.pending.at > 3000) {
-        completeAttempt('confirmed');
+      if (!found && now - state.pending.at > 3000 && location.pathname === path) {
+        completeAttempt('banner_cleared');
         return;
       }
       if (now - state.pending.at > VERIFY_MS) {
@@ -346,6 +398,7 @@
       } else {
         display('Monitoring · paused banner not present');
       }
+      // A quota banner alone must never initiate a Continue click.
       return;
     }
     if (found.timed) {
@@ -369,14 +422,27 @@
       display(`${found.reason === 'ended_early' ? 'Early response' : 'Usage pause'} · cooldown active`);
       return;
     }
+    // Recheck the DOM after the asynchronous claim. A user may have resumed manually.
+    const claim = await claimContinue(found.reason);
+    if (!claim.granted) {
+      display('Continue blocked by another tab or extension background unavailable');
+      return;
+    }
+    if (!found.button.isConnected || !enabledButton(found.button) ||
+        AutoResumeCore.findActionBanner(document)?.button !== found.button) {
+      await releaseContinue(found.reason, claim.token);
+      display('Continue button changed before click; waiting for next check');
+      return;
+    }
     // Write before triggering the UI action to prevent duplicate attempts.
-    state.lastClick = now;
+    state.lastClick = Date.now();
     state.pending = { at: now, reason: found.reason };
     saveConversation();
     try {
       found.button.click();
       display(`${found.reason === 'ended_early' ? 'Early response' : 'Usage pause'} · Continue clicked · checking`);
     } catch {
+      await releaseContinue(found.reason, claim.token);
       completeAttempt('unconfirmed');
     }
   }
@@ -387,12 +453,26 @@
       if (request?.type === 'getState') {
         sendResponse({ enabled: !!settings.enabled, status: lastStatus,
           latest: history()[0] || null, historyCount: history().length,
-          conversation: location.pathname });
+          conversation: location.pathname, resetAt: currentSchedule()?.at ?? null, resetReason: currentSchedule()?.reason ?? null,
+          checkMinutes: settings.checkMinutes, safeReload: settings.safeReload });
       } else if (request?.type === 'setEnabled' && typeof request.enabled === 'boolean') {
         settings.enabled = request.enabled;
         saveSettings();
         check();
         sendResponse({ ok: true, enabled: settings.enabled });
+      } else if (request?.type === 'getSettings') {
+        sendResponse({ checkMinutes: settings.checkMinutes, safeReload: settings.safeReload });
+      } else if (request?.type === 'setSettings') {
+        const minutes = Number(request.checkMinutes);
+        if (!VALID_INTERVALS.includes(minutes) || typeof request.safeReload !== 'boolean') {
+          sendResponse({ ok: false, error: 'Invalid settings' });
+        } else {
+          settings.checkMinutes = minutes;
+          settings.safeReload = request.safeReload;
+          saveSettings();
+          nextPeriodicCheck = Date.now() + minutes * 60_000;
+          sendResponse({ ok: true, checkMinutes: minutes, safeReload: settings.safeReload });
+        }
       } else if (request?.type === 'showPanel') {
         openPanel();
         sendResponse({ ok: true, visible: panelVisible && panel.isConnected && getComputedStyle(panel).display !== 'none' });
@@ -402,19 +482,37 @@
       return false;
     });
   }
+  // Keep the low-frequency fallback cheap; MutationObserver covers enabled Continue immediately.
   nextPeriodicCheck = Date.now() + settings.checkMinutes * 60_000;
   setInterval(() => {
+    if (location.href !== lastObservedUrl) { lastObservedUrl = location.href; check(); }
     if (Date.now() >= nextPeriodicCheck) {
       nextPeriodicCheck = Date.now() + settings.checkMinutes * 60_000;
       check();
     }
   }, 1000);
   let mutationTimer;
-  new MutationObserver(() => {
+  // Ignore mutations caused by our own UI to prevent endless observer/check/render cycles.
+  // Only Claude DOM changes can schedule a new check.
+  const panelMutation = node => {
+    if (node === panel) return true;
+    if (node.nodeType === 1) return panel.contains(node);
+    return !!node.parentElement && panel.contains(node.parentElement);
+  };
+  const observer = new MutationObserver(records => {
+    const externalChange = records.some(record => {
+      if (panelMutation(record.target)) return false;
+      if (record.type === 'childList') {
+        return [...record.addedNodes, ...record.removedNodes].some(node => !panelMutation(node));
+      }
+      return true;
+    });
+    if (!externalChange) return;
     clearTimeout(mutationTimer);
     mutationTimer = setTimeout(check, 650);
-  }).observe(document.body || document.documentElement,
-    { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['disabled','aria-disabled'] });
+  });
+  const watchRoot = document.body || document.documentElement;
+  observer.observe(watchRoot, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['disabled', 'aria-disabled'] });
   document.addEventListener('visibilitychange', check);
   window.addEventListener('focus', check);
   // Persisted timestamps survive restarts; check after reopening the page.

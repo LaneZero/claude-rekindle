@@ -234,6 +234,24 @@
     saveSettings();
     check();
   });
+  // Tampermonkey settings reuse the same monitoring engine as the extensions.
+  if (!IS_BROWSER_ADDON && typeof GM_registerMenuCommand === 'function') {
+    for (const minutes of VALID_INTERVALS) {
+      GM_registerMenuCommand(`Check interval: ${minutes} minute(s)`, () => {
+        settings.checkMinutes = minutes;
+        nextPeriodicCheck = Date.now() + minutes * 60_000;
+        saveSettings();
+        openPanel();
+        display(`Check interval set to ${minutes} minute(s)`);
+      });
+    }
+    GM_registerMenuCommand('Toggle safe page reload (off by default)', () => {
+      settings.safeReload = !settings.safeReload;
+      saveSettings();
+      openPanel();
+      display(`Safe reload ${settings.safeReload ? 'enabled' : 'disabled'}`);
+    });
+  }
   if (typeof GM_registerMenuCommand === 'function') {
     GM_registerMenuCommand('Show ClaudeRekindle panel', openPanel);
   }
@@ -406,7 +424,22 @@
     }
   }, 1000);
   let mutationTimer;
-  const observer = new MutationObserver(() => {
+  // Ignore mutations caused by our own UI to prevent endless observer/check/render cycles.
+  // Only Claude DOM changes can schedule a new check.
+  const panelMutation = node => {
+    if (node === panel) return true;
+    if (node.nodeType === 1) return panel.contains(node);
+    return !!node.parentElement && panel.contains(node.parentElement);
+  };
+  const observer = new MutationObserver(records => {
+    const externalChange = records.some(record => {
+      if (panelMutation(record.target)) return false;
+      if (record.type === 'childList') {
+        return [...record.addedNodes, ...record.removedNodes].some(node => !panelMutation(node));
+      }
+      return true;
+    });
+    if (!externalChange) return;
     clearTimeout(mutationTimer);
     mutationTimer = setTimeout(check, 650);
   });
