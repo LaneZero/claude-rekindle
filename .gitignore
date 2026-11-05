@@ -1,5 +1,68 @@
-node_modules/
-dist/
+# ClaudeRekindle - local dependencies and generated output
+/node_modules/
+/dist/
+/release/
+/releases/
+/build/
+/coverage/
+/.nyc_output/
+
+# Local archives and extension packages (generated artifacts)
+*.zip
+*.xpi
+*.crx
+*.tgz
+*.tar.gz
+*.7z
+
+# Debug logs and crash reports
 *.log
-.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log.*
+*.stackdump
+
+# Local configuration and secrets
 .env
+.env.*
+!.env.example
+!.env.sample
+*.local
+*.pem
+*.key
+
+# Python temporary files and caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Browser/test/runtime caches
+.cache/
+.playwright/
+playwright-report/
+test-results/
+/tmp/
+/temp/
+/.tmp/
+/.temp/
+
+# Editor and OS clutter
+.vscode/
+.idea/
+*.suo
+*.user
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Do not ignore source, tests, docs, icons or lockfiles.
+# IMPORTANT: .gitignore does not untrack files already committed.
