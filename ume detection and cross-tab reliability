@@ -1,0 +1,14 @@
+ README.md                          |  8 [32m+++++[m[31m--[m
+ config/manifest.chrome.json        |  2 [32m+[m[31m-[m
+ config/manifest.firefox.json       |  2 [32m+[m[31m-[m
+ docs/V2.5_RELEASE_NOTES.md         | 46 [32m++++++++++++++++++++++++++++++++++++++[m
+ package.json                       |  5 [32m+++[m[31m--[m
+ scripts/build.mjs                  |  2 [32m+[m[31m-[m
+ src/core/detection.js              | 15 [32m++++++++++++[m[31m-[m
+ src/extension/background.js        | 29 [32m++++++++++++++++++++++++[m
+ src/extension/content.js           | 40 [32m++++++++++++++++++++++++[m[31m---------[m
+ tests/browser-dom.mjs              | 22 [32m++++++++++++++++++[m
+ tests/claims.test.cjs              | 29 [32m++++++++++++++++++++++++[m
+ tests/dom-fixtures.test.cjs        | 36 [32m+++++++++++++++++++++++++++++[m
+ tests/fixtures/claude-banners.html | 13 [32m+++++++++++[m
+ 13 files changed, 230 insertions(+), 19 deletions(-)
