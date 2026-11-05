@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ClaudeRekindle by LaneZero",
-  "version": "2.7.3",
-  "description": "Resume eligible paused Claude responses when Continue is available; remember reset times and show local reminders. Independent of Anthropic.",
+  "version": "2.8.0",
+  "description": "Automatically click eligible enabled Continue buttons on Claude; remember announced reset times. Unofficial, no quota bypass.",
   "permissions": [
     "alarms",
     "notifications",

@@ -34,3 +34,6 @@ body{width:370px;min-width:370px;max-width:none;overflow-x:hidden}
 .check-setting{align-items:flex-start;border:1px solid #44363c;border-radius:12px;padding:12px}
 .check-setting input{width:20px;height:20px;accent-color:#db634a;flex-shrink:0;margin-top:4px}
 #settings-feedback{min-height:16px}
+
+/* Release candidate: space accessible external links without changing intrinsic popup sizing. */
+#page-about .link-btn + .link-btn{margin-top:8px}
