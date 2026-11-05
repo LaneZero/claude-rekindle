@@ -3,7 +3,7 @@
 
 Unofficial browser utility that resumes **eligible, paused Claude.ai responses** by clicking the existing enabled Continue button. It never bypasses quotas, sends prompts automatically, or calls private Claude APIs. Independent of Anthropic.
 
-> **Status:** v2.8.0-rc.1 (release candidate, not stable). Automated checks run; Chrome/Firefox desktop and Firefox Android still require real-device QA.
+> **Status:** v2.8.0-rc.2 (release candidate, not stable). Automated checks run; Chrome/Firefox desktop and Firefox Android still require real-device QA.
 
 ## Supported targets
 

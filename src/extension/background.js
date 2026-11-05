@@ -6,6 +6,7 @@ const NOTIF_PREFIX = 'claude-reset-notification:';
 const CLAIM_KEY = 'lanezero.rekindle.resumeClaims.v1';
 const CLAIM_TTL_MS = 60 * 60_000;
 let claimQueue = Promise.resolve();
+let scheduleQueue = Promise.resolve();
 // Serialize read/modify/write operations across tabs, including simultaneous warnings.
 function claimResume(sender, reason) {
   const operation = claimQueue.then(async () => {
@@ -92,9 +93,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
   if (!['scheduleReset','resolveReset'].includes(request?.type)) return;
-  (async () => {
+  // All schedule mutations are serialized to avoid losing concurrent updates.
+  // A callback always receives an explicit success/failure result.
+  const operation = scheduleQueue.then(async () => {
     if (!sender.tab?.url || !validUrl(sender.tab.url) || !validUrl(request.url) ||
-        idFor(sender.tab.url) !== idFor(request.url)) return;
+        idFor(sender.tab.url) !== idFor(request.url)) return {ok:false};
     const id = idFor(request.url);
     const schedules = await getSchedules();
     if (request.type === 'resolveReset') {
@@ -102,18 +105,31 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       await chrome.alarms.clear(alarmName(id));
     } else {
       const at = Number(request.at);
-      if (!Number.isFinite(at) || at < Date.now() - 24*60*60*1000 || at > Date.now()+48*60*60*1000) return;
+      if (!Number.isFinite(at) || at < Date.now() - 24*60*60*1000 ||
+          at > Date.now()+48*60*60*1000) return {ok:false};
       const reason = request.reason === 'near_limit' ? 'near_limit' : 'usage_limit';
-      // Do not downgrade an existing paused conversation to an informational warning.
+      // Do not downgrade a real pause to an informational warning.
       if (!(schedules[id]?.reason === 'usage_limit' && reason === 'near_limit' && !schedules[id].resolved)) {
-        if (schedules[id]?.at !== at || schedules[id]?.reason !== reason) schedules[id] = { url: request.url, at, reason, resolved:false, notified:false };
+        if (schedules[id]?.at !== at || schedules[id]?.reason !== reason || schedules[id]?.resolved) {
+          schedules[id] = { url: request.url, at, reason, resolved:false, notified:false };
+        }
       }
-      if (schedules[id]?.at > Date.now()) await chrome.alarms.create(alarmName(id), { when: schedules[id].at });
+      if (schedules[id]?.at > Date.now()) {
+        await chrome.alarms.create(alarmName(id), {when:schedules[id].at});
+      }
     }
-    // Bound storage: latest 50 schedule entries.
-    for (const obsolete of Object.keys(schedules).sort((a,b)=>schedules[b].at-schedules[a].at).slice(50)) delete schedules[obsolete];
+    // Keep the 50 most recent records, protecting against malformed stored items.
+    const ordered = Object.keys(schedules).sort((a,b) =>
+      (Number(schedules[b]?.at) || 0) - (Number(schedules[a]?.at) || 0));
+    for (const obsolete of ordered.slice(50)) {
+      delete schedules[obsolete];
+      await chrome.alarms.clear(alarmName(obsolete));
+    }
     await saveSchedules(schedules);
-  })().then(() => sendResponse({ok:true})).catch(() => sendResponse({ok:false}));
+    return {ok:true};
+  });
+  scheduleQueue = operation.catch(() => {});
+  operation.then(sendResponse).catch(() => sendResponse({ok:false}));
   return true;
 });
 chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name.startsWith(ALARM_PREFIX)) void remindDue(); });
@@ -121,9 +137,11 @@ chrome.runtime.onStartup.addListener(() => { void restoreAlarms(); });
 chrome.runtime.onInstalled.addListener(() => { void restoreAlarms(); });
 chrome.notifications.onClicked.addListener(id => {
   if (!id.startsWith(NOTIF_PREFIX)) return;
-  const pathname = decodeURIComponent(id.slice(NOTIF_PREFIX.length));
-  const url = 'https://claude.ai' + pathname;
-  if (validUrl(url)) void chrome.tabs.create({url});
+  try {
+    const pathname = decodeURIComponent(id.slice(NOTIF_PREFIX.length));
+    const url = 'https://claude.ai' + pathname;
+    if (validUrl(url)) void chrome.tabs.create({url});
+  } catch { /* Ignore malformed notification IDs. */ }
   void chrome.notifications.clear(id);
 });
 // Service-worker restarts may discard alarms; recover them when the worker loads.
