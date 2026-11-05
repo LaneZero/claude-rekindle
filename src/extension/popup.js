@@ -1,3 +1,7 @@
+// Runtime URLs avoid broken relative icon paths across extension hosts.
+for (const img of document.querySelectorAll('img[data-rekindle-icon]')) {
+  img.src = chrome.runtime.getURL(`icons/icon${img.dataset.rekindleIcon}.png`);
+}
 // Minimal-privilege popup. Only the current Claude tab receives state queries.
 const $ = id => document.getElementById(id);
 const wallets = Object.freeze({

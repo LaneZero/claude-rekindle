@@ -334,7 +334,7 @@
       return;
     }
     if (found.timed) {
-      if (state.resetSource !== found.content) {
+      if (state.resetSource !== found.content || !Number.isFinite(state.resetAt)) {
         state.resetSource = found.content;
         state.resetAt = parseReset(found.content);
         saveConversation();
@@ -346,7 +346,10 @@
       }
     }
     if (!enabledButton(found.button)) {
-      display(`${found.reason === 'ended_early' ? 'Early response' : 'Usage pause'} · Continue disabled`);
+      const schedule = currentSchedule();
+      display(schedule && found.reason === 'usage_limit'
+        ? `${scheduleStatus(schedule)} · Continue disabled`
+        : `${found.reason === 'ended_early' ? 'Early response' : 'Usage pause'} · Continue disabled`);
       return;
     }
     const cooldown = found.reason === 'ended_early' ? EARLY_COOLDOWN_MS : COOLDOWN_MS;
@@ -418,6 +421,14 @@
   nextPeriodicCheck = Date.now() + settings.checkMinutes * 60_000;
   setInterval(() => {
     if (location.href !== lastObservedUrl) { lastObservedUrl = location.href; check(); }
+    // Update the countdown text without a full DOM scan.
+    if (!state.pending && currentSchedule() && settings.enabled && !lastStatus.includes('Continue clicked')) {
+      const updated = scheduleStatus(currentSchedule());
+      if (lastStatus.includes('reset') || lastStatus.includes('Usage limit') || lastStatus.includes('Usage advisory')) {
+        const suffix = lastStatus.includes('Continue disabled') ? ' · Continue disabled' : ' · no Continue button detected';
+        display(updated + suffix);
+      }
+    }
     if (Date.now() >= nextPeriodicCheck) {
       nextPeriodicCheck = Date.now() + settings.checkMinutes * 60_000;
       check();

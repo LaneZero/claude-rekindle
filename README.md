@@ -115,3 +115,11 @@ Reads hard quota banners such as `You are out of free messages until 10:00 PM`, 
 - On Tampermonkey, set intervals and safe reload via the Tampermonkey menu. On Firefox/Chrome, use Settings in the toolbar Popup.
 - No refresh is run while the browser is closed or the device is asleep; timers may be throttled in background tabs. Firefox Android requires actual device verification.
 - **Known limit:** This is intentionally conservative but cannot guarantee preservation of every transient in-page state, especially unsaved uploads. Leave safe reload off for critical or lengthy jobs.
+
+## v2.7.5 Beta 1: dated reset notices and About icon
+
+- Recognizes `Paused: Your free usage returns Nov 5 at 1:10 AM` and `You are out of free messages until tomorrow at 1:10 AM` as well as undated reset notices.
+- Handles date-aware browser-local countdown and shows when the announced reset has passed without claiming the quota is definitely restored.
+- Keeps monitoring disabled Continue buttons; no quota bypass, no automatic prompt submission.
+- Corrects the About icon by including the 64px asset in both builds and loading images with `runtime.getURL`.
+- Browser/mobile installation and actual DOM behavior still require manual validation.
