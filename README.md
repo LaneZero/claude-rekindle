@@ -1,10 +1,9 @@
-> Current beta: v2.7.1. Firefox popup width regression fixed.
 
 # ClaudeRekindle by LaneZero
 
 Unofficial browser utility that resumes **eligible, paused Claude.ai responses** by clicking the existing enabled Continue button. It never bypasses quotas, sends prompts automatically, or calls private Claude APIs. Independent of Anthropic.
 
-> **Status:** v2.7.0-beta.1 mobile popup hardening. Automated parser tests and packaging validation only; not production/stable or verified on Firefox Android.
+> **Status:** v2.8.0-rc.1 (release candidate, not stable). Automated checks run; Chrome/Firefox desktop and Firefox Android still require real-device QA.
 
 ## Supported targets
 
@@ -34,13 +33,13 @@ npm run check
 
 `dist/chrome` is a Chrome unpacked extension. For Firefox desktop, open `about:debugging#/runtime/this-firefox` -> Load Temporary Add-on -> `dist/firefox/manifest.json`. Temporary install disappears after browser restart. Chrome: `chrome://extensions` -> Developer mode -> Load unpacked -> `dist/chrome`.
 
-`dist/tampermonkey/claude-rekindle.user.js` is preserved for backward compatibility. Its engine is still a legacy fork; future work should consolidate it with the pure detection core. Disable older versions before testing.
+`dist/tampermonkey/claude-rekindle.user.js` is preserved for backward compatibility. Its detection and content engine are generated from the shared core. Browser-extension multi-tab coordination remains a separate capability. Disable older versions before testing.
 
 ## Architecture
 
 - `src/core/detection.js`: pure parser shared by Chrome and Firefox extension builds
 - `src/extension`: single-source content, popup and background scripts
-- `src/userscript.user.js`: preserved Tampermonkey baseline
+- `src/userscript.user.js`: generated Tampermonkey script from the shared core
 - `config/manifest.*.json`: browser-specific configuration
 - `scripts/build.mjs`: reproducible dist generation, no third-party build dependencies
 - `tests`: Node built-in test runner for message parsing and clock semantics
@@ -123,3 +122,16 @@ Reads hard quota banners such as `You are out of free messages until 10:00 PM`, 
 - Keeps monitoring disabled Continue buttons; no quota bypass, no automatic prompt submission.
 - Corrects the About icon by including the 64px asset in both builds and loading images with `runtime.getURL`.
 - Browser/mobile installation and actual DOM behavior still require manual validation.
+
+## Release candidate
+
+Run `npm run release:check` and see [Release Checklist](docs/RELEASE_CHECKLIST.md), [Privacy](PRIVACY.md), [Store Listing](docs/STORE_LISTING.md), and [RC release notes](docs/V2.8_RELEASE_NOTES.md). Passing the preflight is **not** a replacement for Chrome, Firefox and Android manual tests.
+
+For local candidate ZIPs and SHA-256 checksums, run `npm run release:pack` (Python 3 required). This never uploads anything to GitHub or browser stores.
+
+
+## Git hygiene / generated release files
+
+`dist/` contains generated extension builds and `release/` contains packaged release artifacts (ZIP files and `SHA256SUMS.txt`). Both directories are ignored by Git; publish the generated packages as **GitHub Release assets**, not source commits. Source files, icons, tests, manifests and documentation are tracked normally.
+
+To remove a *previously tracked* generated directory from the Git index without deleting local files, first review `git ls-files dist release`, then run `git rm -r --cached --ignore-unmatch dist release` and commit the change. This only affects Git tracking, not your local files.

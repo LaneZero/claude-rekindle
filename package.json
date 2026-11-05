@@ -1,6 +1,6 @@
 {
   "name": "claude-rekindle",
-  "version": "2.7.5-beta.1",
+  "version": "2.8.0-rc.1",
   "private": true,
   "description": "Browser-focused ClaudeRekindle monorepo",
   "scripts": {
@@ -8,7 +8,10 @@
     "test": "node scripts/sync-userscript.mjs && node --test tests/*.test.cjs",
     "check": "npm run test && npm run build",
     "pack": "node scripts/package.mjs",
-    "test:browser": "node tests/browser-dom.mjs"
+    "test:browser": "node tests/browser-dom.mjs",
+    "preflight": "node scripts/preflight.mjs",
+    "release:check": "npm run check && npm run preflight",
+    "release:pack": "python scripts/package_release.py"
   },
   "engines": {
     "node": ">=20"

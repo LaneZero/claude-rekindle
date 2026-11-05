@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ClaudeRekindle by LaneZero
 // @namespace    https://github.com/LaneZero/claude-rekindle
-// @version      2.7.5-beta.1
+// @version      2.8.0-rc.1
 // @author       LaneZero
 // @description  Resume eligible paused responses in Claude.ai; track announced quota reset times. Independent of Anthropic. Does not bypass limits.
 // @match        https://claude.ai/*
