@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package a locally validated release candidate; no publishing or signing."""
+"""Package a locally validated release build; no publishing or signing."""
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
 import hashlib
@@ -15,9 +15,10 @@ OUT.mkdir(exist_ok=True)
 # Fail closed if the static and unit gates have not been met.
 subprocess.run(['npm.cmd' if sys.platform == 'win32' else 'npm', 'run', 'release:check'], cwd=ROOT, check=True)
 
-ignore = {'dist', 'release', '.git', 'node_modules', '__pycache__', '.pytest_cache'}
+ignore = {'dist', 'release', 'releases', 'build', '.git', 'node_modules', '__pycache__', '.pytest_cache', '.venv', '.cache', 'playwright-report', 'test-results'}
+SKIP_SUFFIXES = {'.zip', '.xpi', '.crx', '.pem', '.key', '.log'}
 def source_files():
-    return sorted((p for p in ROOT.rglob('*') if p.is_file() and not (set(p.relative_to(ROOT).parts) & ignore)), key=lambda p: str(p))
+    return sorted((p for p in ROOT.rglob('*') if p.is_file() and not (set(p.relative_to(ROOT).parts) & ignore) and p.suffix.lower() not in SKIP_SUFFIXES and not p.name.startswith('.env')), key=lambda p: str(p))
 
 def make_zip(name, members, base, prefix=''):
     target = OUT / name
@@ -41,6 +42,6 @@ for platform in ('chrome', 'firefox', 'tampermonkey'):
     artifacts.append(make_zip(f'ClaudeRekindle-{VERSION}-{platform}.zip', sorted(p for p in base.rglob('*') if p.is_file()), base))
 checksums = '\n'.join(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}' for p in artifacts) + '\n'
 (OUT / 'SHA256SUMS.txt').write_text(checksums, encoding='utf-8')
-print('\nRelease candidate archives, not store-signed:')
+print('\nRelease archives (not store-signed or auto-published):')
 for path in artifacts: print(f'  {path.name} ({path.stat().st_size:,} bytes)')
 print('  SHA256SUMS.txt')

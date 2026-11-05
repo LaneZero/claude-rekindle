@@ -51,6 +51,11 @@ function drawHistory(events) {
 }
 async function refresh() {
   try {
+    // This also works when no Claude tab is open and the popup cannot query a chat.
+    const siteReset = await chrome.runtime.sendMessage({type:'getSiteReset'}).catch(() => null);
+    const siteResetAt = Number.isFinite(siteReset?.at) ? siteReset.at : null;
+    resetAt = siteResetAt;
+    updateCountdown();
     const tabs=await chrome.tabs.query({active:true,currentWindow:true});
     const tab=tabs[0];
     // On Android and in ordinary browsing, the selected tab may not be Claude.
@@ -68,13 +73,13 @@ async function refresh() {
     $('check-minutes').value = String(data.checkMinutes ?? 5);
     $('safe-reload').checked = data.safeReload === true;
     $('status').textContent=data.status||'Monitoring';
-    resetAt = Number.isFinite(data.resetAt) ? data.resetAt : null;
+    resetAt = siteResetAt ?? (Number.isFinite(data.resetAt) ? data.resetAt : null);
     updateCountdown();
     $('last').textContent=data.latest?`${fmt(data.latest.time)} · ${data.latest.result}`:'No attempts yet';
     $('count').textContent=String(data.historyCount||0);
     drawHistory(hist.events);
   } catch(e) {
-    tabId=null;resetAt=null;updateCountdown();setState('No tab');$('status').textContent=e.message||'Could not connect to the active Claude tab.';
+    tabId=null;updateCountdown();setState('No tab');$('status').textContent=e.message||'Could not connect to the active Claude tab.';
     $('enabled').disabled=true;$('last').textContent='Open Claude to view';drawHistory([]);
   }
 }

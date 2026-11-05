@@ -1,19 +1,15 @@
-# ClaudeRekindle release checklist (v2.8.0 RC2)
+# ClaudeRekindle v2.8.0 Stable — Publication gates
 
-- [x] Build the Chrome, Firefox, and Tampermonkey variants.
-- [x] Pass the automated unit/regression and static release preflight checks.
-- [x] Verify host scope, permissions, icon assets and README/privacy documentation.
-- [x] Exclude build and release outputs from Git source tracking.
-- [x] Produce checksummed, reproducible ZIP archives.
-- [ ] Record manual Chrome desktop runtime QA results.
-- [ ] Record manual Firefox desktop runtime QA results.
-- [ ] Record manual Firefox Android runtime QA results.
-- [ ] Confirm popup, About icon, donations and accessible navigation on device.
-- [ ] Test quota pause, ended early, early success and reset-time-passed behavior.
-- [ ] Test cross-tab concurrency and browser-close/reopen reminders.
-- [ ] Verify browser-store policy and sign distributable packages.
-- [ ] Open a Pull Request to develop, wait for CI, review and merge.
-- [ ] Create tag `v2.8.0-rc.2` only from reviewed and merged commit.
-- [ ] Upload platform ZIPs and SHA256SUMS.txt as a GitHub **pre-release**.
+- [x] RC5 user confirmed working in tested browsers (individual device matrix not supplied)
+- [x] RC5 automated regression baseline; rerun `npm run release:check` for Stable
+- [x] Manifest, popup and userscript version consistency
+- [x] Restricted host permissions and local-only behavior checks
+- [x] `.gitignore` excludes `dist/`, `release/`, secrets and local dependencies
+- [x] Release archives and SHA-256 integrity
+- [ ] Verify tagged commit matches packaged source before publishing
+- [ ] Record Chrome and Firefox Desktop browser versions and exact notification test results
+- [ ] Obtain real-device Firefox Android QA before changing Experimental label
+- [ ] Obtain marketplace signing/approval for store installation
+- [ ] Create and verify GitHub Release and upload archives (manual operation)
 
-See `docs/RC2_SECURITY_QA.md` for the risk/verification breakdown.
+**Distribution status:** Stable *source* archive and locally-installable desktop builds; not a signed browser-store release. Firefox Android and Tampermonkey remain experimental/legacy.

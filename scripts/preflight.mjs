@@ -5,7 +5,7 @@ const root = process.cwd();
 const read = async path => readFile(join(root, path), 'utf8');
 const fail = message => { throw new Error(`Release preflight: ${message}`); };
 const pkg = JSON.parse(await read('package.json'));
-if (!/^\d+\.\d+\.\d+-rc\.\d+$/.test(pkg.version)) fail('expected pre-release npm version');
+if (!/^\d+\.\d+\.\d+(?:-rc\.\d+)?$/.test(pkg.version)) fail('invalid release version');
 const storeVersion = pkg.version.split('-')[0];
 const requiredPermissions = ['alarms','notifications','storage','tabs'];
 // Verify release artifacts remain local rather than accidentally committed.
@@ -29,7 +29,7 @@ for (const browser of ['chrome','firefox']) {
     if (icon.subarray(0,8).toString('hex') !== '89504e470d0a1a0a' || icon.readUInt32BE(16)!==size || icon.readUInt32BE(20)!==size) fail(`${browser} invalid ${size}px PNG`);
   }
   const popup = await read(`dist/${browser}/popup.html`);
-  if (!popup.includes('v2.8.0 RC 2') || !popup.includes('2.8.0 RC 2')) fail(`${browser} popup displays stale version`);
+  if (!popup.includes(`v${pkg.version}`) || !popup.includes(`<b>${pkg.version}</b>`)) fail(`${browser} popup displays stale version`);
   if (!popup.includes('LaneZero') || !popup.includes('https://github.com/LaneZero/claude-rekindle')) fail(`${browser} branding missing`);
   for (const name of ['popup.js','content.js','background.js','core.js']) {
     const file = await stat(join(root,`dist/${browser}/${name}`));
@@ -43,4 +43,4 @@ const docs = ['PRIVACY.md','docs/RELEASE_CHECKLIST.md','docs/STORE_LISTING.md','
 for (const doc of docs) if ((await read(doc)).length < 150) fail(`missing or empty ${doc}`);
 if ((await read('PRIVACY.md')).includes('collects no data whatsoever')) fail('privacy claim too broad');
 console.log(`PASS: ${pkg.version} release metadata, scope, privacy docs and icon assets validated.`);
-console.log('MANUAL GATE: Chrome, Firefox desktop, and Firefox Android runtime verification still required.');
+console.log('MANUAL GATE: verify notification delivery and platform behavior on actual target browsers; Firefox Android is experimental.');

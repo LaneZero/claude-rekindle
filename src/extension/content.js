@@ -11,6 +11,7 @@
   const PREFIX = 'lanezero:claude-autoresume:v2:';
   const HISTORY_KEY = PREFIX + 'history';
   const RESET_KEY = PREFIX + 'resets';
+  const SITE_QUOTA_ID = '/__site_quota__';
   const REMINDER_KEY = PREFIX + 'reminder';
   const SETTINGS_KEY = PREFIX + 'settings';
   const { NEAR_LIMIT, HARD_LIMIT, remainingText } = AutoResumeCore;
@@ -44,9 +45,9 @@
     try { chrome.runtime.sendMessage({ type, ...payload }, () => { void chrome.runtime.lastError; }); }
     catch { /* Browser extension background may be unavailable. */ }
   }
-  function rememberReset(at, reason = 'usage_limit') {
+  function rememberReset(at, reason = 'usage_limit', scope = 'conversation') {
     if (!Number.isFinite(at) || at <= 0) return;
-    const id = location.pathname;
+    const id = scope === 'site' ? SITE_QUOTA_ID : location.pathname;
     const existing = reminders[id];
     // A usage pause is stronger evidence than an advisory warning.
     if (existing?.at === at && (existing.reason === 'usage_limit' || existing.reason === reason)) return;
@@ -56,7 +57,7 @@
     const keys = Object.keys(reminders).sort((a,b) => reminders[b].at-reminders[a].at);
     for (const old of keys.slice(50)) delete reminders[old];
     saveReminders();
-    notifyExtension('scheduleReset', { at, reason, url: location.origin + id });
+    notifyExtension('scheduleReset', { at, reason, scope, url: location.href });
   }
   function resolveReset() {
     const entry = reminders[location.pathname];
@@ -68,7 +69,7 @@
   function remindInPageIfDue() {
     // Tampermonkey cannot run when the browser is closed. It checks on Claude load.
     if (IS_BROWSER_ADDON) return;
-    const entry = reminders[location.pathname];
+    const entry = reminders[SITE_QUOTA_ID] || reminders[location.pathname];
     if (!entry || entry.resolved || entry.reminded || Date.now() < entry.at) return;
     entry.reminded = true;
     saveReminders();
@@ -139,7 +140,7 @@
     // Composer warning has no message-warning test id; never use its Upgrade button.
     for (const banner of document.querySelectorAll('[data-cds="Banner"]')) {
       if (banner.matches('[data-testid="message-warning"]')) continue;
-      const text = banner.querySelector('[aria-atomic="true"]')?.textContent || banner.textContent || '';
+      const text = AutoResumeCore.bannerVisibleText(banner);
       const m = NEAR_LIMIT.exec(text);
       if (!m) continue;
       const percent = Number(m[1]);
@@ -151,12 +152,15 @@
   function findHardLimit() {
     // A composer quota banner has no Continue button. Match only this explicit message.
     for (const banner of document.querySelectorAll('[data-cds="Banner"]')) {
-      const text = banner.textContent || '';
+      const text = AutoResumeCore.bannerVisibleText(banner);
       if (HARD_LIMIT.test(text)) return text;
     }
     return null;
   }
   function currentSchedule() {
+    // A composer quota notice is account/site-wide and can exist without a chat.
+    const global = reminders[SITE_QUOTA_ID];
+    if (global && !global.resolved && Number.isFinite(global.at)) return global;
     const item = reminders[location.pathname];
     return item && !item.resolved && Number.isFinite(item.at) ? item : null;
   }
@@ -167,8 +171,10 @@
     const label = item.reason === 'usage_limit' ? 'Usage limit' : 'Usage advisory';
     return `${label} · local reset ${local} · ${remainingText(item.at)}`;
   }
-  function parseReset(text) {
-    return AutoResumeCore.resetTimestamp(text, Date.now(), reminders[location.pathname]?.at ?? null);
+  function parseReset(text, scope = 'conversation') {
+    // Never let an unrelated chat's previous reset override a site notice.
+    const previous = scope === 'site' ? reminders[SITE_QUOTA_ID]?.at : reminders[location.pathname]?.at;
+    return AutoResumeCore.resetTimestamp(text, Date.now(), previous ?? null);
   }
   function enabledButton(button) {
     if (!button.isConnected || button.disabled || button.matches(':disabled') ||
@@ -232,6 +238,7 @@
   toggle.addEventListener('click', () => {
     settings.enabled = !settings.enabled;
     saveSettings();
+    notifyExtension('setNotificationsEnabled', {enabled: settings.enabled});
     check();
   });
   // Tampermonkey settings reuse the same monitoring engine as the extensions.
@@ -271,7 +278,8 @@
     state.pending = null;
     saveConversation();
     addRecord(event);
-    if (result === 'banner_cleared') resolveReset();
+    // Banner removal confirms only a UI change, not recovered account quota.
+    // Retain the deadline until new evidence updates it.
     // Each new event may show the panel, even when the previous one was dismissed.
     openPanel();
     display(result === 'banner_cleared'
@@ -293,8 +301,8 @@
     const advisory = findNearLimit();
     const hardLimit = findHardLimit();
     if (hardLimit) {
-      const hardAt = parseReset(hardLimit);
-      if (hardAt) rememberReset(hardAt, 'usage_limit');
+      const hardAt = parseReset(hardLimit, 'site');
+      if (hardAt) rememberReset(hardAt, 'usage_limit', 'site');
     }
     if (advisory) {
       // Parse only the reset clock, never interpret the usage percentage as a threshold.
@@ -393,6 +401,7 @@
       } else if (request?.type === 'setEnabled' && typeof request.enabled === 'boolean') {
         settings.enabled = request.enabled;
         saveSettings();
+        notifyExtension('setNotificationsEnabled', {enabled: settings.enabled});
         check();
         sendResponse({ ok: true, enabled: settings.enabled });
       } else if (request?.type === 'getSettings') {
@@ -458,6 +467,8 @@
   observer.observe(watchRoot, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['disabled', 'aria-disabled'] });
   document.addEventListener('visibilitychange', check);
   window.addEventListener('focus', check);
+  // Restore the persisted user preference in the background after page load.
+  notifyExtension('setNotificationsEnabled', {enabled: settings.enabled});
   // Persisted timestamps survive restarts; check after reopening the page.
   check();
 })();

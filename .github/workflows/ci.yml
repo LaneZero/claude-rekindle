@@ -1,9 +1,9 @@
 name: Validate extensions
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, "release/**"]
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, "release/**"]
 permissions:
   contents: read
 jobs:
@@ -17,5 +17,5 @@ jobs:
       - run: npm run release:check
       - uses: actions/upload-artifact@v4
         with:
-          name: claude-rekindle-beta
+          name: claude-rekindle-dist
           path: dist/
