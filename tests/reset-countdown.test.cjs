@@ -30,5 +30,6 @@ test('all builds contain a dedicated local reset card and never click Upgrade',(
   assert.match(html,/id="reset-countdown"/);
   assert.match(js,/findHardLimit/);
   assert.match(userscript,/findHardLimit/);
-  assert.match(js,/no Continue button detected/);
+  assert.match(js,/Continue unavailable/);
+  assert.match(js,/Continue disabled · waiting for reset/);
 });

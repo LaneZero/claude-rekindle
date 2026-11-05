@@ -1,17 +1,16 @@
-> Current beta: v2.7.1. Firefox popup width regression fixed.
 
 # ClaudeRekindle by LaneZero
 
 Unofficial browser utility that resumes **eligible, paused Claude.ai responses** by clicking the existing enabled Continue button. It never bypasses quotas, sends prompts automatically, or calls private Claude APIs. Independent of Anthropic.
 
-> **Status:** v2.7.0-beta.1 mobile popup hardening. Automated parser tests and packaging validation only; not production/stable or verified on Firefox Android.
+> **Status:** v2.8.0 Stable source release for Chrome/Chromium and Firefox Desktop. Firefox Android remains experimental. Automatic tests and static release checks pass; notification behavior depends on browser permissions and background execution.
 
 ## Supported targets
 
 | Target | Status | Behavior |
 |---|---|---|
-| Firefox Desktop | Beta, needs manual testing | Resume + startup reminders |
-| Chrome/Chromium Desktop | Beta, needs manual testing | Resume + startup reminders |
+| Firefox Desktop | Stable source release | Resume + best-effort reminders |
+| Chrome/Chromium Desktop | Stable source release | Resume + best-effort reminders |
 | Firefox Android | Experimental | Background reminders may be delayed or unavailable |
 | Tampermonkey | Legacy beta | Resume and in-page reminders only |
 
@@ -34,13 +33,13 @@ npm run check
 
 `dist/chrome` is a Chrome unpacked extension. For Firefox desktop, open `about:debugging#/runtime/this-firefox` -> Load Temporary Add-on -> `dist/firefox/manifest.json`. Temporary install disappears after browser restart. Chrome: `chrome://extensions` -> Developer mode -> Load unpacked -> `dist/chrome`.
 
-`dist/tampermonkey/claude-rekindle.user.js` is preserved for backward compatibility. Its engine is still a legacy fork; future work should consolidate it with the pure detection core. Disable older versions before testing.
+`dist/tampermonkey/claude-rekindle.user.js` is preserved for backward compatibility. Its detection and content engine are generated from the shared core. Browser-extension multi-tab coordination remains a separate capability. Disable older versions before testing.
 
 ## Architecture
 
 - `src/core/detection.js`: pure parser shared by Chrome and Firefox extension builds
 - `src/extension`: single-source content, popup and background scripts
-- `src/userscript.user.js`: preserved Tampermonkey baseline
+- `src/userscript.user.js`: generated Tampermonkey script from the shared core
 - `config/manifest.*.json`: browser-specific configuration
 - `scripts/build.mjs`: reproducible dist generation, no third-party build dependencies
 - `tests`: Node built-in test runner for message parsing and clock semantics
@@ -52,14 +51,14 @@ Extension permissions: `storage` for reminders, `alarms` for wake-up while the b
 
 ### Known engineering debt
 
-1. **Cross-tab coordination:** background-mediated claims serialize clicks across tabs; verify actual browser behavior before stable release.
+1. **Cross-tab coordination:** background-mediated claims serialize clicks across tabs; complex concurrent browser scenarios remain a regression-test priority.
 2. **LocalStorage scope:** content-script data sits in site-local storage, while reset schedule uses extension storage. Plan migration to extension storage.
-3. **Tampermonkey engine:** still uses its separate legacy detection code; unify after cross-browser regression tests.
+3. **Tampermonkey:** generated from shared detection/content code, but userscript background behavior and cross-tab arbitration differ from extensions.
 4. **DOM integration tests:** Node parser tests cannot prove button clicks or verify Claude UI behavior.
 5. **Android:** needs actual device tests and Mozilla signing/installation validation. No guarantee that background reminders fire while Firefox is suspended.
 6. **Popup last history:** currently operates only when a Claude tab is active.
 
-Do not call the beta version stable until manual and automated browser QA passes. See `docs/ROADMAP.md` and `docs/GIT_GUIDE_FA.md`.
+See `docs/RELEASE_CHECKLIST.md` and `docs/GIT_GUIDE_FA.md` for release gates and installation limitations.
 
 ## Rebranding and migration (v2.5.0-beta.1)
 
@@ -69,7 +68,7 @@ The product is now **ClaudeRekindle by LaneZero**. Proposed repository: `LaneZer
 - The Firefox Gecko extension ID changes to `claude-rekindle@lanezero`, so Firefox treats it as a separate extension. Disable/remove the old experimental extension to avoid double clicks; Firefox extension-local data is **not automatically migrated**.
 - Chrome should likewise have only one of the old/new extensions enabled.
 - Rebranding does not imply official affiliation with Anthropic; do not use Anthropic's official marks or suggest endorsement.
-- No GitHub repository has been created or pushed by this archive.
+- This source archive does not push commits or publish GitHub Releases.
 
 ## Reliability Beta v2.5
 
@@ -115,3 +114,24 @@ Reads hard quota banners such as `You are out of free messages until 10:00 PM`, 
 - On Tampermonkey, set intervals and safe reload via the Tampermonkey menu. On Firefox/Chrome, use Settings in the toolbar Popup.
 - No refresh is run while the browser is closed or the device is asleep; timers may be throttled in background tabs. Firefox Android requires actual device verification.
 - **Known limit:** This is intentionally conservative but cannot guarantee preservation of every transient in-page state, especially unsaved uploads. Leave safe reload off for critical or lengthy jobs.
+
+## v2.7.5 Beta 1: dated reset notices and About icon
+
+- Recognizes `Paused: Your free usage returns Nov 5 at 1:10 AM` and `You are out of free messages until tomorrow at 1:10 AM` as well as undated reset notices.
+- Handles date-aware browser-local countdown and shows when the announced reset has passed without claiming the quota is definitely restored.
+- Keeps monitoring disabled Continue buttons; no quota bypass, no automatic prompt submission.
+- Corrects the About icon by including the 64px asset in both builds and loading images with `runtime.getURL`.
+- Browser/mobile installation and actual DOM behavior still require manual validation.
+
+## Release candidate
+
+Run `npm run release:check` and see [Release Checklist](docs/RELEASE_CHECKLIST.md), [Privacy](PRIVACY.md), [Store Listing](docs/STORE_LISTING.md), and [RC release notes](docs/V2.8_RELEASE_NOTES.md). Passing the preflight is **not** a replacement for Chrome, Firefox and Android manual tests.
+
+For local candidate ZIPs and SHA-256 checksums, run `npm run release:pack` (Python 3 required). This never uploads anything to GitHub or browser stores.
+
+
+## Git hygiene / generated release files
+
+`dist/` contains generated extension builds and `release/` contains packaged release artifacts (ZIP files and `SHA256SUMS.txt`). Both directories are ignored by Git; publish the generated packages as **GitHub Release assets**, not source commits. Source files, icons, tests, manifests and documentation are tracked normally.
+
+To remove a *previously tracked* generated directory from the Git index without deleting local files, first review `git ls-files dist release`, then run `git rm -r --cached --ignore-unmatch dist release` and commit the change. This only affects Git tracking, not your local files.

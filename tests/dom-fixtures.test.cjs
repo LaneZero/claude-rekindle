@@ -25,7 +25,7 @@ test('sanitized real-world fixtures capture all three states', () => {
 test('DOM selector is scoped to warning banners and their own Continue button', () => {
   function root(text, buttons, hasWarning = true) {
     return {querySelectorAll(selector) {
-      assert.equal(selector, '[data-testid="message-warning"][role="status"]');
+      assert.equal(selector, '[data-testid="message-warning"]');
       return hasWarning ? [{textContent:text, querySelectorAll:() => buttons.map(label=>({textContent:label}))}] : [];
     }};
   }

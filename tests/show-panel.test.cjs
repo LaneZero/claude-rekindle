@@ -16,7 +16,7 @@ test('Show has visible failure feedback instead of silently doing nothing', () =
 });
 test('Page and userscript panels can be reopened and override page-wide display CSS', () => {
   for (const source of [page, userScript]) {
-    assert.match(source, /setProperty\('display', panelVisible \? 'block' : 'none', 'important'\)/);
+    assert.match(source, /setProperty\('display', displayValue, 'important'\)/);
     assert.match(source, /document\.documentElement\.append\(panel\)/);
   }
   assert.match(page, /visible: panelVisible && panel\.isConnected/);
