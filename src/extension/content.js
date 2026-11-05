@@ -11,6 +11,7 @@
   const PREFIX = 'lanezero:claude-autoresume:v2:';
   const HISTORY_KEY = PREFIX + 'history';
   const RESET_KEY = PREFIX + 'resets';
+  const SITE_QUOTA_ID = '/__site_quota__';
   const REMINDER_KEY = PREFIX + 'reminder';
   const SETTINGS_KEY = PREFIX + 'settings';
   const { NEAR_LIMIT, HARD_LIMIT, remainingText } = AutoResumeCore;
@@ -44,9 +45,9 @@
     try { chrome.runtime.sendMessage({ type, ...payload }, () => { void chrome.runtime.lastError; }); }
     catch { /* Browser extension background may be unavailable. */ }
   }
-  function rememberReset(at, reason = 'usage_limit') {
+  function rememberReset(at, reason = 'usage_limit', scope = 'conversation') {
     if (!Number.isFinite(at) || at <= 0) return;
-    const id = location.pathname;
+    const id = scope === 'site' ? SITE_QUOTA_ID : location.pathname;
     const existing = reminders[id];
     // A usage pause is stronger evidence than an advisory warning.
     if (existing?.at === at && (existing.reason === 'usage_limit' || existing.reason === reason)) return;
@@ -56,7 +57,7 @@
     const keys = Object.keys(reminders).sort((a,b) => reminders[b].at-reminders[a].at);
     for (const old of keys.slice(50)) delete reminders[old];
     saveReminders();
-    notifyExtension('scheduleReset', { at, reason, url: location.origin + id });
+    notifyExtension('scheduleReset', { at, reason, scope, url: location.href });
   }
   function resolveReset() {
     const entry = reminders[location.pathname];
@@ -68,7 +69,7 @@
   function remindInPageIfDue() {
     // Tampermonkey cannot run when the browser is closed. It checks on Claude load.
     if (IS_BROWSER_ADDON) return;
-    const entry = reminders[location.pathname];
+    const entry = reminders[SITE_QUOTA_ID] || reminders[location.pathname];
     if (!entry || entry.resolved || entry.reminded || Date.now() < entry.at) return;
     entry.reminded = true;
     saveReminders();
@@ -139,7 +140,7 @@
     // Composer warning has no message-warning test id; never use its Upgrade button.
     for (const banner of document.querySelectorAll('[data-cds="Banner"]')) {
       if (banner.matches('[data-testid="message-warning"]')) continue;
-      const text = banner.querySelector('[aria-atomic="true"]')?.textContent || banner.textContent || '';
+      const text = AutoResumeCore.bannerVisibleText(banner);
       const m = NEAR_LIMIT.exec(text);
       if (!m) continue;
       const percent = Number(m[1]);
@@ -151,12 +152,15 @@
   function findHardLimit() {
     // A composer quota banner has no Continue button. Match only this explicit message.
     for (const banner of document.querySelectorAll('[data-cds="Banner"]')) {
-      const text = banner.textContent || '';
+      const text = AutoResumeCore.bannerVisibleText(banner);
       if (HARD_LIMIT.test(text)) return text;
     }
     return null;
   }
   function currentSchedule() {
+    // A composer quota notice is account/site-wide and can exist without a chat.
+    const global = reminders[SITE_QUOTA_ID];
+    if (global && !global.resolved && Number.isFinite(global.at)) return global;
     const item = reminders[location.pathname];
     return item && !item.resolved && Number.isFinite(item.at) ? item : null;
   }
@@ -167,8 +171,10 @@
     const label = item.reason === 'usage_limit' ? 'Usage limit' : 'Usage advisory';
     return `${label} · local reset ${local} · ${remainingText(item.at)}`;
   }
-  function parseReset(text) {
-    return AutoResumeCore.resetTimestamp(text, Date.now(), reminders[location.pathname]?.at ?? null);
+  function parseReset(text, scope = 'conversation') {
+    // Never let an unrelated chat's previous reset override a site notice.
+    const previous = scope === 'site' ? reminders[SITE_QUOTA_ID]?.at : reminders[location.pathname]?.at;
+    return AutoResumeCore.resetTimestamp(text, Date.now(), previous ?? null);
   }
   function enabledButton(button) {
     if (!button.isConnected || button.disabled || button.matches(':disabled') ||
@@ -196,8 +202,10 @@
   close.style.cssText = 'background:transparent;border:0;color:#fff;font-size:22px;line-height:1;cursor:pointer;padding:0 3px';
   header.append(title, close);
   const message = document.createElement('div');
-  message.style.cssText = 'margin-top:8px;overflow-wrap:anywhere;';
-  message.setAttribute('role', 'status');
+  // Reserve the same vertical space and avoid re-announcing every countdown tick.
+  message.style.cssText = 'margin-top:8px;height:78px;overflow-y:auto;overflow-wrap:anywhere;scrollbar-gutter:stable;';
+  message.setAttribute('role', 'group');
+  message.setAttribute('aria-live', 'off');
   const last = document.createElement('div');
   last.style.cssText = 'opacity:.8;font-size:11px;margin-top:6px;overflow-wrap:anywhere';
   const actions = document.createElement('div');
@@ -208,14 +216,34 @@
   actions.append(toggle);
   panel.append(header, message, last, actions);
 
+  // Avoid unnecessary style/text writes: Claude's DOM observer must not receive
+  // noisy self-updates and the panel must not flash on each timer tick.
+  let previousPanelDisplay = null;
+  function setTextIfChanged(node, text) {
+    if (node.textContent !== text) node.textContent = text;
+  }
   function render() {
-    // Force visibility over page-wide CSS rules; preserve manual dismissal.
-    panel.style.setProperty('display', panelVisible ? 'block' : 'none', 'important');
+    const displayValue = panelVisible ? 'block' : 'none';
+    if (previousPanelDisplay !== displayValue) {
+      panel.style.setProperty('display', displayValue, 'important');
+      previousPanelDisplay = displayValue;
+    }
     if (!panelVisible) return;
-    message.textContent = settings.enabled ? statusText : 'ClaudeRekindle disabled';
-    toggle.textContent = settings.enabled ? 'Disable' : 'Enable';
+    setTextIfChanged(message, settings.enabled ? statusText : 'ClaudeRekindle disabled');
+    setTextIfChanged(toggle, settings.enabled ? 'Disable' : 'Enable');
     const latest = history()[0];
-    last.textContent = latest ? `Last resume: ${formatTime(latest.time)} · ${latest.result}` : 'No resume attempts recorded';
+    setTextIfChanged(last, latest
+      ? `Last resume: ${formatTime(latest.time)} · ${latest.result}`
+      : 'No resume attempts recorded');
+  }
+  // Read-only status inspection does not change which Continue is safe to click.
+  function continueLabel(found = null) {
+    if (found) return enabledButton(found.button)
+      ? 'Continue enabled' : 'Continue disabled · waiting for reset';
+    const observed = AutoResumeCore.inspectContinue(document);
+    if (observed === 'disabled') return 'Continue disabled · waiting for reset';
+    if (observed === 'enabled') return 'Continue visible · awaiting safe verification';
+    return 'Continue unavailable';
   }
   function openPanel() {
     settings.dismissed = false;
@@ -232,8 +260,27 @@
   toggle.addEventListener('click', () => {
     settings.enabled = !settings.enabled;
     saveSettings();
+    notifyExtension('setNotificationsEnabled', {enabled: settings.enabled});
     check();
   });
+  // Tampermonkey settings reuse the same monitoring engine as the extensions.
+  if (!IS_BROWSER_ADDON && typeof GM_registerMenuCommand === 'function') {
+    for (const minutes of VALID_INTERVALS) {
+      GM_registerMenuCommand(`Check interval: ${minutes} minute(s)`, () => {
+        settings.checkMinutes = minutes;
+        nextPeriodicCheck = Date.now() + minutes * 60_000;
+        saveSettings();
+        openPanel();
+        display(`Check interval set to ${minutes} minute(s)`);
+      });
+    }
+    GM_registerMenuCommand('Toggle safe page reload (off by default)', () => {
+      settings.safeReload = !settings.safeReload;
+      saveSettings();
+      openPanel();
+      display(`Safe reload ${settings.safeReload ? 'enabled' : 'disabled'}`);
+    });
+  }
   if (typeof GM_registerMenuCommand === 'function') {
     GM_registerMenuCommand('Show ClaudeRekindle panel', openPanel);
   }
@@ -243,6 +290,7 @@
   panelVisible = !settings.dismissed;
 
   function display(text) {
+    if (text === statusText && text === lastStatus) return;
     statusText = text;
     lastStatus = text;
     render();
@@ -253,7 +301,8 @@
     state.pending = null;
     saveConversation();
     addRecord(event);
-    if (result === 'banner_cleared') resolveReset();
+    // Banner removal confirms only a UI change, not recovered account quota.
+    // Retain the deadline until new evidence updates it.
     // Each new event may show the panel, even when the previous one was dismissed.
     openPanel();
     display(result === 'banner_cleared'
@@ -275,8 +324,8 @@
     const advisory = findNearLimit();
     const hardLimit = findHardLimit();
     if (hardLimit) {
-      const hardAt = parseReset(hardLimit);
-      if (hardAt) rememberReset(hardAt, 'usage_limit');
+      const hardAt = parseReset(hardLimit, 'site');
+      if (hardAt) rememberReset(hardAt, 'usage_limit', 'site');
     }
     if (advisory) {
       // Parse only the reset clock, never interpret the usage percentage as a threshold.
@@ -306,9 +355,9 @@
     }
     if (!found) {
       if (advisory && state.lastNearLimit?.at) {
-        display(currentSchedule()?.reason === 'usage_limit' ? scheduleStatus(currentSchedule()) + ' · no Continue button detected' : `Usage advisory: ${advisory.percent}% used · ${scheduleStatus(currentSchedule() || {at:state.lastNearLimit.at,reason:'near_limit'})} · no pause detected`);
+        display(currentSchedule()?.reason === 'usage_limit' ? scheduleStatus(currentSchedule()) + ' · ' + continueLabel() : `Usage advisory: ${advisory.percent}% used · ${scheduleStatus(currentSchedule() || {at:state.lastNearLimit.at,reason:'near_limit'})} · no pause detected`);
       } else if (currentSchedule()) {
-        display(scheduleStatus(currentSchedule()) + ' · no Continue button detected');
+        display(scheduleStatus(currentSchedule()) + ' · ' + continueLabel());
       } else {
         display('Monitoring · paused banner not present');
       }
@@ -316,19 +365,22 @@
       return;
     }
     if (found.timed) {
-      if (state.resetSource !== found.content) {
+      if (state.resetSource !== found.content || !Number.isFinite(state.resetAt)) {
         state.resetSource = found.content;
         state.resetAt = parseReset(found.content);
         saveConversation();
         if (state.resetAt) rememberReset(state.resetAt, 'usage_limit');
       }
       if (state.resetAt && now < state.resetAt) {
-        display(scheduleStatus({at: state.resetAt, reason:'usage_limit'}));
+        display(scheduleStatus({at: state.resetAt, reason:'usage_limit'}) + ' · ' + continueLabel(found));
         return;
       }
     }
     if (!enabledButton(found.button)) {
-      display(`${found.reason === 'ended_early' ? 'Early response' : 'Usage pause'} · Continue disabled`);
+      const schedule = currentSchedule();
+      display(schedule && found.reason === 'usage_limit'
+        ? `${scheduleStatus(schedule)} · Continue disabled · waiting for reset`
+        : `${found.reason === 'ended_early' ? 'Early response' : 'Usage pause'} · Continue disabled`);
       return;
     }
     const cooldown = found.reason === 'ended_early' ? EARLY_COOLDOWN_MS : COOLDOWN_MS;
@@ -372,6 +424,7 @@
       } else if (request?.type === 'setEnabled' && typeof request.enabled === 'boolean') {
         settings.enabled = request.enabled;
         saveSettings();
+        notifyExtension('setNotificationsEnabled', {enabled: settings.enabled});
         check();
         sendResponse({ ok: true, enabled: settings.enabled });
       } else if (request?.type === 'getSettings') {
@@ -400,13 +453,34 @@
   nextPeriodicCheck = Date.now() + settings.checkMinutes * 60_000;
   setInterval(() => {
     if (location.href !== lastObservedUrl) { lastObservedUrl = location.href; check(); }
+    // The remainingText value changes at most once per minute; render() skips
+    // unchanged text. Inspect only within the already-scoped warning banners.
+    if (!state.pending && currentSchedule() && settings.enabled &&
+        (lastStatus.startsWith('Usage limit') || lastStatus.startsWith('Usage advisory'))) {
+      display(scheduleStatus(currentSchedule()) + ' · ' + continueLabel());
+    }
     if (Date.now() >= nextPeriodicCheck) {
       nextPeriodicCheck = Date.now() + settings.checkMinutes * 60_000;
       check();
     }
   }, 1000);
   let mutationTimer;
-  const observer = new MutationObserver(() => {
+  // Ignore mutations caused by our own UI to prevent endless observer/check/render cycles.
+  // Only Claude DOM changes can schedule a new check.
+  const panelMutation = node => {
+    if (node === panel) return true;
+    if (node.nodeType === 1) return panel.contains(node);
+    return !!node.parentElement && panel.contains(node.parentElement);
+  };
+  const observer = new MutationObserver(records => {
+    const externalChange = records.some(record => {
+      if (panelMutation(record.target)) return false;
+      if (record.type === 'childList') {
+        return [...record.addedNodes, ...record.removedNodes].some(node => !panelMutation(node));
+      }
+      return true;
+    });
+    if (!externalChange) return;
     clearTimeout(mutationTimer);
     mutationTimer = setTimeout(check, 650);
   });
@@ -414,6 +488,8 @@
   observer.observe(watchRoot, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['disabled', 'aria-disabled'] });
   document.addEventListener('visibilitychange', check);
   window.addEventListener('focus', check);
+  // Restore the persisted user preference in the background after page load.
+  notifyExtension('setNotificationsEnabled', {enabled: settings.enabled});
   // Persisted timestamps survive restarts; check after reopening the page.
   check();
 })();
