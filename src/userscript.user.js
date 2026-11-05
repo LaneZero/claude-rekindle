@@ -106,7 +106,24 @@
     }
     return null;
   }
-  const api = Object.freeze({PAUSED, EARLY, TIMED, HARD_LIMIT, NEAR_LIMIT, classify, advisory, resetTimestamp, remainingText, bannerVisibleText, findActionBanner});
+  // Read-only status inspection. Never returns an action to click.
+  // Claude may render a disabled Continue within a generic CDS Banner or
+  // a message-warning with a changed wrapper; inspecting it must not expand
+  // the selectors allowed for automatic clicking.
+  function inspectContinue(root) {
+    let seen = false;
+    for (const banner of root.querySelectorAll('[data-testid="message-warning"], [data-cds="Banner"]')) {
+      if (!classify(bannerVisibleText(banner))) continue;
+      seen = true;
+      for (const button of banner.querySelectorAll('button')) {
+        if (!/^(continue|resume)$/i.test(bannerVisibleText(button))) continue;
+        return (button.disabled || button.getAttribute('aria-disabled') === 'true' ||
+          button.closest('[inert], [data-disabled="true"]')) ? 'disabled' : 'enabled';
+      }
+    }
+    return seen ? 'unavailable' : 'absent';
+  }
+  const api = Object.freeze({PAUSED, EARLY, TIMED, HARD_LIMIT, NEAR_LIMIT, classify, advisory, resetTimestamp, remainingText, bannerVisibleText, findActionBanner, inspectContinue});
   global.AutoResumeCore = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
@@ -315,8 +332,10 @@
   close.style.cssText = 'background:transparent;border:0;color:#fff;font-size:22px;line-height:1;cursor:pointer;padding:0 3px';
   header.append(title, close);
   const message = document.createElement('div');
-  message.style.cssText = 'margin-top:8px;overflow-wrap:anywhere;';
-  message.setAttribute('role', 'status');
+  // Reserve the same vertical space and avoid re-announcing every countdown tick.
+  message.style.cssText = 'margin-top:8px;height:78px;overflow-y:auto;overflow-wrap:anywhere;scrollbar-gutter:stable;';
+  message.setAttribute('role', 'group');
+  message.setAttribute('aria-live', 'off');
   const last = document.createElement('div');
   last.style.cssText = 'opacity:.8;font-size:11px;margin-top:6px;overflow-wrap:anywhere';
   const actions = document.createElement('div');
@@ -327,14 +346,34 @@
   actions.append(toggle);
   panel.append(header, message, last, actions);
 
+  // Avoid unnecessary style/text writes: Claude's DOM observer must not receive
+  // noisy self-updates and the panel must not flash on each timer tick.
+  let previousPanelDisplay = null;
+  function setTextIfChanged(node, text) {
+    if (node.textContent !== text) node.textContent = text;
+  }
   function render() {
-    // Force visibility over page-wide CSS rules; preserve manual dismissal.
-    panel.style.setProperty('display', panelVisible ? 'block' : 'none', 'important');
+    const displayValue = panelVisible ? 'block' : 'none';
+    if (previousPanelDisplay !== displayValue) {
+      panel.style.setProperty('display', displayValue, 'important');
+      previousPanelDisplay = displayValue;
+    }
     if (!panelVisible) return;
-    message.textContent = settings.enabled ? statusText : 'ClaudeRekindle disabled';
-    toggle.textContent = settings.enabled ? 'Disable' : 'Enable';
+    setTextIfChanged(message, settings.enabled ? statusText : 'ClaudeRekindle disabled');
+    setTextIfChanged(toggle, settings.enabled ? 'Disable' : 'Enable');
     const latest = history()[0];
-    last.textContent = latest ? `Last resume: ${formatTime(latest.time)} · ${latest.result}` : 'No resume attempts recorded';
+    setTextIfChanged(last, latest
+      ? `Last resume: ${formatTime(latest.time)} · ${latest.result}`
+      : 'No resume attempts recorded');
+  }
+  // Read-only status inspection does not change which Continue is safe to click.
+  function continueLabel(found = null) {
+    if (found) return enabledButton(found.button)
+      ? 'Continue enabled' : 'Continue disabled · waiting for reset';
+    const observed = AutoResumeCore.inspectContinue(document);
+    if (observed === 'disabled') return 'Continue disabled · waiting for reset';
+    if (observed === 'enabled') return 'Continue visible · awaiting safe verification';
+    return 'Continue unavailable';
   }
   function openPanel() {
     settings.dismissed = false;
@@ -381,6 +420,7 @@
   panelVisible = !settings.dismissed;
 
   function display(text) {
+    if (text === statusText && text === lastStatus) return;
     statusText = text;
     lastStatus = text;
     render();
@@ -445,9 +485,9 @@
     }
     if (!found) {
       if (advisory && state.lastNearLimit?.at) {
-        display(currentSchedule()?.reason === 'usage_limit' ? scheduleStatus(currentSchedule()) + ' · no Continue button detected' : `Usage advisory: ${advisory.percent}% used · ${scheduleStatus(currentSchedule() || {at:state.lastNearLimit.at,reason:'near_limit'})} · no pause detected`);
+        display(currentSchedule()?.reason === 'usage_limit' ? scheduleStatus(currentSchedule()) + ' · ' + continueLabel() : `Usage advisory: ${advisory.percent}% used · ${scheduleStatus(currentSchedule() || {at:state.lastNearLimit.at,reason:'near_limit'})} · no pause detected`);
       } else if (currentSchedule()) {
-        display(scheduleStatus(currentSchedule()) + ' · no Continue button detected');
+        display(scheduleStatus(currentSchedule()) + ' · ' + continueLabel());
       } else {
         display('Monitoring · paused banner not present');
       }
@@ -462,14 +502,14 @@
         if (state.resetAt) rememberReset(state.resetAt, 'usage_limit');
       }
       if (state.resetAt && now < state.resetAt) {
-        display(scheduleStatus({at: state.resetAt, reason:'usage_limit'}));
+        display(scheduleStatus({at: state.resetAt, reason:'usage_limit'}) + ' · ' + continueLabel(found));
         return;
       }
     }
     if (!enabledButton(found.button)) {
       const schedule = currentSchedule();
       display(schedule && found.reason === 'usage_limit'
-        ? `${scheduleStatus(schedule)} · Continue disabled`
+        ? `${scheduleStatus(schedule)} · Continue disabled · waiting for reset`
         : `${found.reason === 'ended_early' ? 'Early response' : 'Usage pause'} · Continue disabled`);
       return;
     }
@@ -543,13 +583,11 @@
   nextPeriodicCheck = Date.now() + settings.checkMinutes * 60_000;
   setInterval(() => {
     if (location.href !== lastObservedUrl) { lastObservedUrl = location.href; check(); }
-    // Update the countdown text without a full DOM scan.
-    if (!state.pending && currentSchedule() && settings.enabled && !lastStatus.includes('Continue clicked')) {
-      const updated = scheduleStatus(currentSchedule());
-      if (lastStatus.includes('reset') || lastStatus.includes('Usage limit') || lastStatus.includes('Usage advisory')) {
-        const suffix = lastStatus.includes('Continue disabled') ? ' · Continue disabled' : ' · no Continue button detected';
-        display(updated + suffix);
-      }
+    // The remainingText value changes at most once per minute; render() skips
+    // unchanged text. Inspect only within the already-scoped warning banners.
+    if (!state.pending && currentSchedule() && settings.enabled &&
+        (lastStatus.startsWith('Usage limit') || lastStatus.startsWith('Usage advisory'))) {
+      display(scheduleStatus(currentSchedule()) + ' · ' + continueLabel());
     }
     if (Date.now() >= nextPeriodicCheck) {
       nextPeriodicCheck = Date.now() + settings.checkMinutes * 60_000;

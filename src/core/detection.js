@@ -95,7 +95,24 @@
     }
     return null;
   }
-  const api = Object.freeze({PAUSED, EARLY, TIMED, HARD_LIMIT, NEAR_LIMIT, classify, advisory, resetTimestamp, remainingText, bannerVisibleText, findActionBanner});
+  // Read-only status inspection. Never returns an action to click.
+  // Claude may render a disabled Continue within a generic CDS Banner or
+  // a message-warning with a changed wrapper; inspecting it must not expand
+  // the selectors allowed for automatic clicking.
+  function inspectContinue(root) {
+    let seen = false;
+    for (const banner of root.querySelectorAll('[data-testid="message-warning"], [data-cds="Banner"]')) {
+      if (!classify(bannerVisibleText(banner))) continue;
+      seen = true;
+      for (const button of banner.querySelectorAll('button')) {
+        if (!/^(continue|resume)$/i.test(bannerVisibleText(button))) continue;
+        return (button.disabled || button.getAttribute('aria-disabled') === 'true' ||
+          button.closest('[inert], [data-disabled="true"]')) ? 'disabled' : 'enabled';
+      }
+    }
+    return seen ? 'unavailable' : 'absent';
+  }
+  const api = Object.freeze({PAUSED, EARLY, TIMED, HARD_LIMIT, NEAR_LIMIT, classify, advisory, resetTimestamp, remainingText, bannerVisibleText, findActionBanner, inspectContinue});
   global.AutoResumeCore = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unpublished 2.8.0 UI refinement (same version number)
+
+- Distinguish unavailable, disabled, and visible Continue controls in read-only status reporting.
+- Avoid redundant panel text and display-style writes during countdown updates.
+- Reserve stable status layout height and disable live announcements for each timer refresh.
+- Preserve all existing automatic-click safety checks and release packaging.
+
 ## [2.8.0] — 2026-11-05
 
 - Stable source release baseline for Chrome/Chromium and Firefox Desktop.
