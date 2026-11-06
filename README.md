@@ -30,7 +30,7 @@ It also recognizes supported prematurely ended responses (`This response ended e
 
 > Store-signed Chrome/Firefox packages are **not** included in the source release. The project must be separately submitted and approved by each store. Avoid running multiple copies of ClaudeRekindle, or the extension and userscript together, on the same Claude page.
 
-## Features
+</div>
 
 - **Conservative automatic Continue:** only a currently enabled Continue control associated with a recognized pause/early-ending notice is eligible; no prompt submission or quota bypass.
 - **Quota notice recognition:** supports `You are out of free messages until 10:20 PM`, notices containing `tomorrow at ...`, and supported dated forms such as `Nov 5 at 1:10 AM`.
