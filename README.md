@@ -1,181 +1,167 @@
+<div align="center">
+
 # ClaudeRekindle
 
-**A small, local-first browser extension to resume eligible paused Claude responses and remind you when Claude's announced usage-reset time arrives.**
+**Keep track of Claude.ai usage pauses. Resume eligible interrupted responses when Continue becomes available.**
 
-[![Version](https://img.shields.io/badge/version-2.8.0-blue)](https://github.com/LaneZero/claude-rekindle/releases)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Project](https://img.shields.io/badge/maintainer-LaneZero-6f42c1)](https://github.com/LaneZero)
+A lightweight, unofficial browser extension by **[LaneZero](https://github.com/LaneZero)**.
 
-**Created by LaneZero** · [Releases](https://github.com/LaneZero/claude-rekindle/releases) · [Report an issue](https://github.com/LaneZero/claude-rekindle/issues) · [Privacy](PRIVACY.md) · [Changelog](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.8.0-2563eb?style=flat-square)](https://github.com/LaneZero/claude-rekindle/releases/tag/v2.8.0)
+[![Release](https://img.shields.io/badge/release-stable-16a34a?style=flat-square)](https://github.com/LaneZero/claude-rekindle/releases)
+[![Chrome](https://img.shields.io/badge/Chrome-Chromium-4285F4?logo=googlechrome&logoColor=white&style=flat-square)](#installation)
+[![Firefox](https://img.shields.io/badge/Firefox-Desktop-FF7139?logo=firefoxbrowser&logoColor=white&style=flat-square)](#installation)
+[![License](https://img.shields.io/github/license/LaneZero/claude-rekindle?style=flat-square)](LICENSE)
+
+[Features](#features) · [Screenshots](#screenshots) · [Installation](#installation) · [How it works](#how-it-works) · [Privacy](#privacy--security) · [Development](#development)
+
+</div>
 
 > [!IMPORTANT]
-> ClaudeRekindle is an **unofficial, independent project**. It is not affiliated with, endorsed by, or sponsored by Anthropic. It **does not bypass usage limits**, automatically send new prompts, or call private Claude APIs. It can only interact with existing, eligible **enabled Continue** controls shown by Claude.
+> ClaudeRekindle **does not bypass usage limits**, generate new prompts, or access private Claude APIs. It can only activate an **existing, enabled Continue button** in eligible situations. An announced reset time does **not** guarantee that access has been restored.
 
-## What it does
+## Screenshots
 
-When Claude pauses a response because free usage has run out, its interface may show a **Continue** button that is disabled until the announced reset. ClaudeRekindle watches for supported pause messages, keeps track of the announced local reset time, and attempts to resume only when the existing Continue control becomes eligible and enabled.
+<div align="center">
+  <img src="Images/screenshot01.png" alt="ClaudeRekindle extension interface showing monitoring status and usage information" width="780" />
+  <p><sub>ClaudeRekindle v2.8.0 · Extension interface</sub></p>
+</div>
 
-If Claude displays a general notice such as `You are out of free messages until 10:20 PM` **without a Continue button**, the extension still records the announced time and can show a countdown and a best-effort reminder. **An announced reset time is not proof that usage has been restored.**
+> The screenshot is stored in [`Images/screenshot01.png`](Images/screenshot01.png). Additional screenshots can be added to this section as the project evolves.
 
-It also recognizes supported prematurely ended responses (`This response ended early.`) and checks for an eligible Continue control. It never clicks **Upgrade**.
+## Get ClaudeRekindle
 
-## Platform support
+| Platform | Installation | Support |
+|:--|:--|:--|
+| **Google Chrome / Chromium** | **Chrome Web Store: Coming soon** | Desktop · Stable source build |
+| **Mozilla Firefox** | **Firefox Add-ons: Coming soon** | Desktop · Stable source build |
+| **Firefox for Android** | Firefox Add-ons listing pending | Experimental |
+| **Tampermonkey** | [GitHub release downloads](https://github.com/LaneZero/claude-rekindle/releases/latest) | Legacy userscript |
 
-| Platform | Distribution | Support level |
-| --- | --- | --- |
-| Chrome / Chromium (desktop) | Manifest V3 extension | Stable source release; manually load unpacked for local testing |
-| Firefox (desktop) | Firefox extension | Stable source release; temporary loading for local testing |
-| Firefox for Android | Firefox extension | **Experimental**; background execution and installation depend on Android/Firefox |
-| Tampermonkey | Generated `.user.js` script | **Legacy**; in-page behavior, not equivalent to an extension background worker |
+**Store links to insert after approval:**
 
-> Store-signed Chrome/Firefox packages are **not** included in the source release. The project must be separately submitted and approved by each store. Avoid running multiple copies of ClaudeRekindle, or the extension and userscript together, on the same Claude page.
+<!-- Replace the placeholder URL below after the Chrome Web Store listing is live:
+Chrome Web Store: https://chromewebstore.google.com/detail/REPLACE_WITH_ACTUAL_LISTING
+-->
+
+<!-- Replace the placeholder URL below after the Firefox Add-ons listing is live:
+Firefox Add-ons: https://addons.mozilla.org/firefox/addon/REPLACE_WITH_ACTUAL_SLUG/
+-->
+
+**Until the store listings are published:** download the appropriate package from [GitHub Releases](https://github.com/LaneZero/claude-rekindle/releases/tag/v2.8.0). Store-ready, permanently installable builds may require platform signing or review.
 
 ## Features
 
-- **Conservative automatic Continue:** only a currently enabled Continue control associated with a recognized pause/early-ending notice is eligible; no prompt submission or quota bypass.
-- **Quota notice recognition:** supports `You are out of free messages until 10:20 PM`, notices containing `tomorrow at ...`, and supported dated forms such as `Nov 5 at 1:10 AM`.
-- **Visible-text extraction:** avoids hidden accessibility descriptions inside Claude's hyperlinks, including `(opens in new tab)`.
-- **Local countdown:** shows the announced reset clock and remaining time in the toolbar popup, even when no paused response is available.
-- **Best-effort notifications:** can alert when the announced reset time arrives, subject to browser permissions and background execution. A reminder means **check Claude**, not **quota definitely restored**.
-- **Responsive popup:** Overview, Settings, Activity, About and Support; includes local recent activity, an in-page monitoring panel, and JSON export.
-- **Monitoring settings:** choose a fallback DOM-check interval of **1, 2, 5 (default), 10 or 15 minutes**. DOM changes can trigger earlier checks.
-- **Optional guarded page reload:** **OFF by default**. When enabled, the extension avoids reloads where a visible Continue control, pending attempt, or unsent draft is detected. Maximum three reload attempts per tab session; still not a guarantee against losing all transient state, especially uploads.
-- **Cross-tab coordination (extensions):** a background claim system helps prevent duplicate resume attempts for the same conversation.
-- **User control and privacy:** enable or disable monitoring, close/reopen the page panel, keep local history, and export local activity without sending it to LaneZero.
+- **Eligible auto-resume:** detects supported Claude.ai pause / early-ended notices and interacts only with the existing enabled Continue control.
+- **Usage-limit detection:** recognizes free-message quota banners, including notices with an AM/PM time, “tomorrow”, or an explicit date.
+- **Local reset countdown:** displays the time remaining until Claude's *announced* reset; distinguishes an expired announcement from confirmed availability.
+- **Best-effort reminders:** browser notifications when the announced reset time arrives, subject to browser permissions and background execution.
+- **Configurable checks:** selectable monitoring intervals of **1, 2, 5, 10, or 15 minutes**.
+- **Optional guarded reload:** disabled by default, with safeguards designed to avoid reloading while content may be unsent or an eligible action is pending.
+- **Status and activity UI:** Overview, Activity, Settings, About, and Support, plus an in-page monitoring panel.
+- **Cross-browser architecture:** shared detection and extension code for Chrome and Firefox, with a generated legacy Tampermonkey distribution.
 
-### How the status should be interpreted
+## How it works
 
-| Status or event | Meaning |
-| --- | --- |
-| `Continue unavailable` | No eligible Continue control was found |
-| `Continue disabled · waiting for reset` | The control exists, but is disabled |
-| `Continue visible · awaiting safe verification` | A visible enabled control was observed; the safety checks still govern any click |
-| `Usage limit` and a countdown | Claude has announced a local reset time; access is not verified |
-| `Reset time passed` | The announced time passed; actual quota availability is unknown |
-| `banner_cleared` in history | A warning/banner disappeared after an attempt; **not** proof a response finished |
+1. Claude.ai displays a supported pause or free-message usage notice.
+2. ClaudeRekindle reads the relevant notice locally and displays its monitoring state. If a reset time is announced, it displays a countdown.
+3. When an *eligible, enabled* Continue button is detected in the appropriate warning context, the extension may activate that existing button using guarded checks and cooldowns.
+4. If the reset time arrives without an actionable Continue button, the extension can **notify you to check Claude.ai**. It does not claim that the quota has definitely refreshed.
 
-Messages and DOM structure on Claude.ai can change at any time. Unknown wording or UI variations can prevent detection; please report reproducible examples with sensitive content removed.
+**It never clicks Upgrade, bypasses a rate limit, or automatically sends a new user message.**
 
-## Installation and testing
+## Installation
 
-### Requirements
+### Chrome / Chromium (unpacked development build)
 
-- **Node.js 20+** to build from source.
-- **Python 3** only for the optional ZIP release-packaging command.
-- Chrome/Chromium or Firefox desktop for unpacked/temporary local installation.
-
-Download a source archive from [GitHub Releases](https://github.com/LaneZero/claude-rekindle/releases), or clone the repository:
-
-```bash
-git clone https://github.com/LaneZero/claude-rekindle.git
-cd claude-rekindle
-npm run check
-```
-
-There is no dependency installation step for the current Node-based build scripts. This project uses Node's built-in test runner.
-
-### Chrome / Chromium desktop
-
-1. Run `npm run build` from the repository root (or extract the Chrome ZIP from a release).
+1. Download `ClaudeRekindle-2.8.0-chrome.zip` from [v2.8.0 Releases](https://github.com/LaneZero/claude-rekindle/releases/tag/v2.8.0) and extract it.
 2. Open `chrome://extensions` and enable **Developer mode**.
-3. Choose **Load unpacked** and select the **`dist/chrome`** directory (or the extracted Chrome package directory containing `manifest.json`).
-4. Open `https://claude.ai/` and verify the toolbar popup. Reload the Claude tab after updating the unpacked extension.
+3. Select **Load unpacked**, then choose the extracted extension folder containing `manifest.json`.
+4. Visit `https://claude.ai/` and open the ClaudeRekindle popup.
 
-### Firefox desktop
+### Firefox Desktop (temporary development build)
 
-1. Run `npm run build` (or extract the Firefox release package).
+1. Download and extract `ClaudeRekindle-2.8.0-firefox.zip`.
 2. Open `about:debugging#/runtime/this-firefox`.
-3. Choose **Load Temporary Add-on** and select **`dist/firefox/manifest.json`** (or `manifest.json` in the extracted Firefox package).
-4. Open Claude and test the popup and in-page panel.
+3. Select **Load Temporary Add-on**, then choose the extracted `manifest.json`.
+4. The temporary add-on is removed on browser restart. A permanent Firefox installation generally requires a signed distribution.
 
-**Temporary Firefox add-ons are removed after a browser restart.** Permanent installation requires the appropriate signed extension distribution; a raw ZIP containing a Firefox manifest is not a signed marketplace add-on.
+### Firefox Android and Tampermonkey
 
-### Firefox for Android (experimental)
+Firefox Android support is **experimental**; background timers and notifications may be delayed or unavailable. The Tampermonkey build is a **legacy** distribution with different background and multi-tab behavior from browser extensions. Do not run the userscript and the extension simultaneously on the same Claude.ai page.
 
-Installation methods vary by Firefox Android release and add-on policies. A desktop ZIP is **not** proof that the Android add-on can be installed, signed, or kept active in the background. Test on the target Firefox Android build and expect reminders to be delayed or unavailable when the OS suspends the browser.
+## Compatibility
 
-### Tampermonkey (legacy)
+| Platform | Status | Notes |
+|:--|:--|:--|
+| Chrome / Chromium desktop | Stable source release | Notifications depend on permissions and browser runtime |
+| Firefox Desktop | Stable source release | Permanent installation may require signing |
+| Firefox Android | Experimental | Background execution is not guaranteed |
+| Tampermonkey | Legacy | In-page reminders; no extension-style background service |
 
-Build and open `dist/tampermonkey/claude-rekindle.user.js` using Tampermonkey's script-import workflow, or extract it from the Tampermonkey ZIP. This version has an in-page panel and local checks; it does not provide the same extension-background notifications or cross-tab guarantees. **Disable the browser extension on the same page when testing the userscript.**
+## Privacy & security
 
-## Usage
+- ClaudeRekindle operates locally in your browser and does not include external analytics or telemetry.
+- It does not intentionally collect chat bodies, login credentials, or cookies for transmission to a server.
+- Its host access is limited to the Claude.ai site; browser permissions support local settings, alarms, notifications, and opening a Claude tab.
+- Controls are scoped to supported notices, rather than arbitrary buttons on the page.
+- It is **not affiliated with, endorsed by, or sponsored by Anthropic**.
 
-1. Open Claude.ai and use Claude normally. ClaudeRekindle does not send prompts on your behalf.
-2. When Claude shows a supported pause or usage-limit notice, open the toolbar popup **Overview** tab to see the detected status and, where available, the announced reset countdown.
-3. Leave **Automatic Continue** enabled to allow eligible Continue attempts after the button is enabled by Claude. Disabling monitoring should also suppress scheduled reminder behavior.
-4. Open **Settings** to adjust fallback inspection intervals; keep **Safe page reload** off unless you understand the risks.
-5. Use **Activity** for local outcome history and **Export JSON** to export local status data. The **Show page panel** action opens the small status panel inside Claude.
+Read the full [Privacy Policy](PRIVACY.md) and [Release Checklist](docs/RELEASE_CHECKLIST.md).
 
-The extension uses normal browser permissions, and scheduled reminders work only on a **best-effort** basis. A fully closed browser or suspended mobile process cannot be relied upon to notify at the exact announced time.
+## Development
 
-## Safety and privacy
-
-ClaudeRekindle operates only on `https://claude.ai/*` for site interaction. It inspects relevant banner/notice text, the Continue control's state, announced reset notices, and whether an unsent draft is present before an optional reload. It does **not** intentionally capture conversation bodies, passwords, cookies, or uploaded file contents for storage or transmission.
-
-| Permission | Why it is requested |
-| --- | --- |
-| `https://claude.ai/*` | Inspect Claude notices and eligible Continue controls |
-| `storage` | Save preferences, announced reset times, coordination and local activity |
-| `alarms` | Schedule reminders when the browser's background execution permits |
-| `notifications` | Alert when an **announced** reset time arrives |
-| `tabs` | Locate or open Claude tabs and respond to a clicked reminder |
-
-No LaneZero analytics service, telemetry endpoint or private Claude API is used by the supplied source. Local records may include conversation pathnames and timestamps. See the full [Privacy Policy](PRIVACY.md) for storage details and deletion guidance.
-
-## Build, tests and release checks
+**Requirements:** Node.js 20+; Python 3 for release packaging.
 
 ```bash
-npm run test            # Shared parser and behavior tests (also syncs userscript)
-npm run build           # Chrome, Firefox and Tampermonkey distributions
-npm run check           # Tests + builds
-npm run test:browser    # Optional browser DOM harness; requires a compatible browser environment
-npm run release:check   # Tests + build + static release preflight
-npm run release:pack    # Create local ZIP files and SHA-256 checksums (Python 3)
+# Run the parser, status and regression tests
+npm run test
+
+# Build Chrome, Firefox and Tampermonkey distributions
+npm run build
+
+# Run the full release readiness checks
+npm run release:check
+
+# Generate local release archives and SHA-256 checksums
+npm run release:pack
 ```
 
-Build output is written to `dist/`; packaged assets are written to `release/`. These directories, as well as generated ZIP/XPI/CRX artifacts, are excluded from Git by `.gitignore`. If older artifacts were already committed, `.gitignore` alone does not untrack them.
+The build outputs are written to `dist/`; release archives are written to `release/`. Both directories are excluded from Git. Publish generated archives as **GitHub Release assets**, not source commits.
 
-**Publishing is manual:** none of the commands above pushes to GitHub, creates Git tags, signs add-ons, or uploads a marketplace listing. Verify [SHA-256 hashes](https://github.com/LaneZero/claude-rekindle/releases) from the corresponding release before distributing files.
-
-### Repository layout
+### Project structure
 
 ```text
-assets/                  Brand assets and extension icons
-config/                  Chrome and Firefox manifests
-src/core/detection.js    Shared notice / time / Continue parsing
-src/extension/           Content script, popup, background, UI styles
-src/userscript.user.js   Tampermonkey userscript generated from shared source
-scripts/                 Build, sync, preflight and packaging utilities
-tests/                   Node tests and DOM fixtures
-docs/                    Release notes, support and QA documentation
-.github/workflows/       CI checks
-PRIVACY.md               Data practices and permissions
-CHANGELOG.md             Version history
-LICENSE                  MIT license
+assets/                 Extension branding and source icons
+config/                 Browser-specific extension manifests
+Images/                 Screenshots for this README
+src/core/               Shared message detection and time parsing
+src/extension/          Popup, content scripts and background logic
+src/userscript.user.js  Legacy Tampermonkey entry point
+scripts/                Build, preflight and release packaging
+tests/                  Automated regression tests
+docs/                   Technical notes and release documentation
 ```
 
-## Known limitations
+For further details, see [Changelog](CHANGELOG.md), [Git Workflow](docs/GIT_GUIDE_FA.md), and [Release Checklist](docs/RELEASE_CHECKLIST.md).
 
-- Claude UI changes or alternative languages may make a notice unrecognizable until the parser is updated.
-- A disabled Continue button cannot be clicked, and the announced reset clock does not guarantee it will become enabled.
-- `banner_cleared` does **not** mean generation finished or the response is complete.
-- The extension cannot reliably run or notify while the **entire browser is closed**; Android background behavior is particularly constrained.
-- Cross-tab claim handling reduces duplicate activity but does not eliminate every possible real-world race condition.
-- **Safe page reload** cannot guarantee preservation of every in-progress task, unsaved upload or transient browser state. It stays off by default.
-- Firefox Android remains experimental and Tampermonkey remains a legacy alternative.
+## Limitations
 
-## Contributing, issues and releases
+- Claude.ai can change its DOM or wording at any time; detection may need updates.
+- Notifications require browser support and permission. They are **not guaranteed while the browser is fully closed** or the device is suspended.
+- A warning disappearing or a reset deadline passing is **not proof** that a response has completed or that Claude usage is available again.
+- The optional safe reload should remain **off** for critical work containing unsaved content.
 
-Use [Issues](https://github.com/LaneZero/claude-rekindle/issues) to report a bug or suggest an improvement. For detection problems, include the **browser and version**, ClaudeRekindle version, a **redacted** notice text or HTML fragment, whether Continue is present/enabled, and the expected versus observed behavior. **Do not post conversation text, cookies, tokens or private account details.**
+## Contributing & support
 
-For changes, work in a feature/fix branch, run `npm run release:check`, and open a pull request against `develop` when that is the repository's active integration branch. Reserve `main` for reviewed releases. See [Release Checklist](docs/RELEASE_CHECKLIST.md), [Release Notes](docs/V2.8_RELEASE_NOTES.md), [Security QA](docs/RC5_FINAL_AUDIT_FA.md), and [Roadmap](docs/ROADMAP.md).
+Bug reports and well-scoped feature requests are welcome through [GitHub Issues](https://github.com/LaneZero/claude-rekindle/issues). Please avoid including private conversations, account details or tokens in reports.
 
-## Support the project
+For release packages and version history, see [GitHub Releases](https://github.com/LaneZero/claude-rekindle/releases).
 
-ClaudeRekindle is free, open-source software. The popup's **Support** tab contains optional donation addresses; verify the full address **and network** before transferring funds. Donations do not affect how the extension works or grant any Claude usage benefits.
+---
 
-## License and disclaimer
+<div align="center">
 
-[MIT License](LICENSE). Copyright © 2026 LaneZero.
+**ClaudeRekindle** · Developed by **[LaneZero](https://github.com/LaneZero)**  
+Independent, unofficial software. Not associated with Anthropic.
 
-**ClaudeRekindle is unofficial.** Anthropic and Claude are trademarks of their respective owners. This project neither evades usage limits nor guarantees that Claude will resume or that browser notifications will arrive on time.
+</div>

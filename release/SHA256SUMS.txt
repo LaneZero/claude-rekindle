@@ -1,0 +1,4 @@
+f5c82f63180f7c539533ff3602a108771fedabcb3c59587e652f7610cae947f2  ClaudeRekindle-2.8.0-source.zip
+f111b31049dc1bcad41cd24e3b68a5be22fc629aae6d949745158e0d3b383e8c  ClaudeRekindle-2.8.0-chrome.zip
+b60d7992e5dc27d1fbfd5c3e41d2774b7c4e6fe5cfa97eda1afb5da4a5a9cee8  ClaudeRekindle-2.8.0-firefox.zip
+27b36f59b49f520ec5389e6d9ec4b64a9d28ca79f74f132e62de19f041d14031  ClaudeRekindle-2.8.0-tampermonkey.zip
